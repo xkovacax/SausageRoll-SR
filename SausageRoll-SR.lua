@@ -2584,7 +2584,6 @@ SRI:SetScript("OnEvent", function(self, event, ...)
             if SausageRollImportDB.bankCharName then bankCharName = SausageRollImportDB.bankCharName end
             if SausageRollImportDB.hardReserves then hardReserves = SausageRollImportDB.hardReserves end
             if SausageRollImportDB.hardReserveCustom then hardReserveCustom = SausageRollImportDB.hardReserveCustom end
-            RegisterAddonMessagePrefix(SR_MSG_PREFIX)
             CreateMinimapButton()
             if importCount > 0 then
                 Print(C_GREEN.."Loaded! "..C_WHITE..importCount.." reserves. /sr to open."..C_RESET)
