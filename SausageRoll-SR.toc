@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cff00ff00Sausage Roll|r - SR
+## Notes: Sausage Roll - SR. Soft-reserve loot distribution addon. (3.3.5a)
+## Author: Sausage Party
+## Version: 1.0.0
+## SavedVariables: SausageRollImportDB
+## DefaultState: enabled
+
+SausageRoll-SR.lua
