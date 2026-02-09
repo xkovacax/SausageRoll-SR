@@ -2444,12 +2444,8 @@ local function CreateMinimapButton()
 
     btn:RegisterForClicks("LeftButtonUp","RightButtonUp")
     btn:SetScript("OnClick", function(self, button)
-        if button=="LeftButton" then
-            displayMode = "bag"
-            if importCount>0 then CreateMainFrame() else CreateImportFrame() end
-        elseif button=="RightButton" then
-            CreateImportFrame()
-        end
+        displayMode = "bag"
+        if importCount>0 then CreateMainFrame() else CreateImportFrame() end
     end)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self,"ANCHOR_LEFT")
@@ -2464,7 +2460,7 @@ local function CreateMinimapButton()
         end
         if activeRoll then GameTooltip:AddLine(C_ORANGE.."Roll active!",1,1,1) end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(C_YELLOW.."LClick:"..C_WHITE.." Main | "..C_YELLOW.."RClick:"..C_WHITE.." Import",1,1,1)
+        GameTooltip:AddLine(C_YELLOW.."Click:"..C_WHITE.." Open SR window",1,1,1)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
