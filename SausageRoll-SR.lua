@@ -429,6 +429,7 @@ local function ClearAllData()
     SausageRollImportDB.reserves = {}
     SausageRollImportDB.reservesByName = {}
     SausageRollImportDB.importCount = 0
+    SausageRollImportDB.lastSRText = nil
 end
 
 local function ParseCSV(text)
@@ -472,6 +473,7 @@ local function ParseCSV(text)
     SausageRollImportDB.reserves = reserves
     SausageRollImportDB.reservesByName = reservesByName
     SausageRollImportDB.importCount = importCount
+    SausageRollImportDB.lastSRText = text
     return importCount
 end
 
@@ -519,7 +521,8 @@ local function ParseHRCSV(text)
 
     SausageRollImportDB.hardReserves = hardReserves
     SausageRollImportDB.hardReserveCustom = hardReserveCustom
-    return #hardReserves
+    SausageRollImportDB.lastHRText = text
+    return #hardReserves + #hardReserveCustom
 end
 
 ----------------------------------------------------------------------
@@ -1549,7 +1552,7 @@ local function CreateMainFrame(silent)
     if mainFrame then mainFrame:Show(); RefreshMainFrame(); return end
 
     local f = CreateFrame("Frame","SRIMainFrame",UIParent)
-    f:SetSize(720,520)
+    f:SetSize(720,540)
     f:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -10, -10)
     f:SetBackdrop({
         bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
@@ -1660,7 +1663,7 @@ local function CreateMainFrame(silent)
     btnHRAnn:SetSize(110,22); btnHRAnn:SetPoint("BOTTOMLEFT",110,12)
     btnHRAnn:SetText("Announce All HR")
     btnHRAnn:SetScript("OnClick", function()
-        if #hardReserves == 0 then Print(C_YELLOW.."No HR items."..C_RESET); return end
+        if #hardReserves == 0 and #hardReserveCustom == 0 then Print(C_YELLOW.."No HR items."..C_RESET); return end
         SendRaid("=== Hard Reserves ===")
         for _, hr in ipairs(hardReserves) do
             local _, link = GetItemInfo(hr.itemId)
@@ -1672,12 +1675,12 @@ local function CreateMainFrame(silent)
     end)
 
     local credit = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-    credit:SetPoint("BOTTOM",0,2)
+    credit:SetPoint("BOTTOM",0,10)
     credit:SetText(C_GRAY.."Sausage Roll - SR created by Sausage Party"..C_RESET)
 
     -- Set Bank/Diss button — opens input popup
     local btnBank = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnBank:SetSize(90,22); btnBank:SetPoint("BOTTOM",-55,12)
+    btnBank:SetSize(90,22); btnBank:SetPoint("BOTTOM",-55,24)
     btnBank:SetText("Set Bank/Diss")
     btnBank:SetScript("OnClick", function()
         -- Create or show bank input popup
@@ -1741,7 +1744,7 @@ local function CreateMainFrame(silent)
 
     -- Grab All Loot to ML button
     local btnGrab = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnGrab:SetSize(90,22); btnGrab:SetPoint("BOTTOM",45,12)
+    btnGrab:SetSize(90,22); btnGrab:SetPoint("BOTTOM",45,24)
     btnGrab:SetText("Grab All Loot")
     btnGrab:SetScript("OnClick", function()
         if not isLootOpen then
@@ -1788,12 +1791,12 @@ local function CreateMainFrame(silent)
 
     -- Bank name display
     local bankText = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-    bankText:SetPoint("BOTTOM", 0, 36)
+    bankText:SetPoint("BOTTOM", 0, 48)
     f.bankText = bankText
 
     local btn1 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btn1:SetSize(85,22); btn1:SetPoint("BOTTOMRIGHT",-75,12)
-    btn1:SetText("Force Refresh")
+    btn1:SetSize(60,22); btn1:SetPoint("BOTTOMRIGHT",-10,36)
+    btn1:SetText("Refresh")
     btn1:SetScript("OnClick", function() RefreshMainFrame() end)
 
     local btn4 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
@@ -1809,8 +1812,8 @@ end
 -- GUI: Import Window (always allows reimport + clear)
 ----------------------------------------------------------------------
 CreateImportFrame = function()
+    if SRIHRImportFrame and SRIHRImportFrame:IsShown() then SRIHRImportFrame:Hide() end
     if SRIImportFrame then
-        SRIImportFrame.editBox:SetText("")
         SRIImportFrame.UpdateStatus()
         SRIImportFrame:Show()
         return
@@ -1853,9 +1856,21 @@ CreateImportFrame = function()
     f.UpdateStatus = UpdateStatus
     UpdateStatus()
 
+    local bg = CreateFrame("Frame",nil,f)
+    bg:SetPoint("TOPLEFT",12,-48)
+    bg:SetPoint("BOTTOMRIGHT",-30,46)
+    bg:SetBackdrop({
+        bgFile="Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+        tile=true, tileSize=16, edgeSize=14,
+        insets={left=3,right=3,top=3,bottom=3},
+    })
+    bg:SetBackdropColor(0,0,0,0.6)
+    bg:SetBackdropBorderColor(0.4,0.4,0.4,0.8)
+
     local sc = CreateFrame("ScrollFrame","SRIImportScroll",f,"UIPanelScrollFrameTemplate")
-    sc:SetPoint("TOPLEFT",14,-50)
-    sc:SetPoint("BOTTOMRIGHT",-34,48)
+    sc:SetPoint("TOPLEFT",16,-52)
+    sc:SetPoint("BOTTOMRIGHT",-34,50)
 
     local eb = CreateFrame("EditBox","SRIImportEditBox",sc)
     eb:SetMultiLine(true)
@@ -1865,6 +1880,10 @@ CreateImportFrame = function()
     eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     sc:SetScrollChild(eb)
     f.editBox = eb
+    if SausageRollImportDB.lastSRText then eb:SetText(SausageRollImportDB.lastSRText) end
+
+    bg:EnableMouse(true)
+    bg:SetScript("OnMouseDown", function() eb:SetFocus() end)
 
     local b1 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
     b1:SetSize(100,24); b1:SetPoint("BOTTOMLEFT",14,14)
@@ -1876,7 +1895,7 @@ CreateImportFrame = function()
         local pc = 0
         for _ in pairs(reservesByName) do pc = pc + 1 end
         Print(C_GREEN..count..C_WHITE.." reserves imported ("..C_GREEN..pc..C_WHITE.." players)"..C_RESET)
-        eb:SetText(""); eb:ClearFocus()
+        eb:ClearFocus()
         UpdateStatus()
         f:Hide()
         CreateMainFrame()
@@ -1901,8 +1920,8 @@ end
 -- GUI: HR Import Window
 ----------------------------------------------------------------------
 CreateHRImportFrame = function()
+    if SRIImportFrame and SRIImportFrame:IsShown() then SRIImportFrame:Hide() end
     if SRIHRImportFrame then
-        SRIHRImportFrame.editBox:SetText("")
         SRIHRImportFrame.UpdateStatus()
         SRIHRImportFrame:Show()
         return
@@ -1933,12 +1952,11 @@ CreateHRImportFrame = function()
     st:SetPoint("TOP",0,-32)
 
     local function UpdateStatus()
-        if #hardReserves > 0 then
-            local cc = #hardReserveCustom
-            local extra = ""
-            if cc > 0 then extra = " + "..cc.." custom lines" end
-            st:SetText(C_GREEN..#hardReserves..C_WHITE.." HR items"..extra..
-                ". Paste new CSV to reimport."..C_RESET)
+        if #hardReserves > 0 or #hardReserveCustom > 0 then
+            local parts = {}
+            if #hardReserves > 0 then table.insert(parts, C_GREEN..#hardReserves..C_WHITE.." HR items") end
+            if #hardReserveCustom > 0 then table.insert(parts, C_GREEN..#hardReserveCustom..C_WHITE.." custom lines") end
+            st:SetText(table.concat(parts, " + ")..". Paste new CSV to reimport."..C_RESET)
         else
             st:SetText(C_GRAY.."Paste HR CSV, click Import"..C_RESET)
         end
@@ -1946,9 +1964,21 @@ CreateHRImportFrame = function()
     f.UpdateStatus = UpdateStatus
     UpdateStatus()
 
+    local bg = CreateFrame("Frame",nil,f)
+    bg:SetPoint("TOPLEFT",12,-48)
+    bg:SetPoint("BOTTOMRIGHT",-30,46)
+    bg:SetBackdrop({
+        bgFile="Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+        tile=true, tileSize=16, edgeSize=14,
+        insets={left=3,right=3,top=3,bottom=3},
+    })
+    bg:SetBackdropColor(0,0,0,0.6)
+    bg:SetBackdropBorderColor(0.4,0.4,0.4,0.8)
+
     local sc = CreateFrame("ScrollFrame","SRIHRImportScroll",f,"UIPanelScrollFrameTemplate")
-    sc:SetPoint("TOPLEFT",14,-50)
-    sc:SetPoint("BOTTOMRIGHT",-34,48)
+    sc:SetPoint("TOPLEFT",16,-52)
+    sc:SetPoint("BOTTOMRIGHT",-34,50)
 
     local eb = CreateFrame("EditBox","SRIHRImportEditBox",sc)
     eb:SetMultiLine(true)
@@ -1958,6 +1988,10 @@ CreateHRImportFrame = function()
     eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     sc:SetScrollChild(eb)
     f.editBox = eb
+    if SausageRollImportDB.lastHRText then eb:SetText(SausageRollImportDB.lastHRText) end
+
+    bg:EnableMouse(true)
+    bg:SetScript("OnMouseDown", function() eb:SetFocus() end)
 
     local b1 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
     b1:SetSize(100,24); b1:SetPoint("BOTTOMLEFT",14,14)
@@ -1965,12 +1999,16 @@ CreateHRImportFrame = function()
     b1:SetScript("OnClick", function()
         local text = eb:GetText()
         if not text or text == "" then Print(C_RED.."Paste HR CSV first!"..C_RESET); return end
-        local count = ParseHRCSV(text)
-        local cc = #hardReserveCustom
-        local extra = ""
-        if cc > 0 then extra = " + "..cc.." custom lines" end
-        Print(C_GREEN..count..C_WHITE.." HR items imported"..extra..C_RESET)
-        eb:SetText(""); eb:ClearFocus()
+        ParseHRCSV(text)
+        local parts = {}
+        if #hardReserves > 0 then table.insert(parts, C_GREEN..#hardReserves..C_WHITE.." HR items") end
+        if #hardReserveCustom > 0 then table.insert(parts, C_GREEN..#hardReserveCustom..C_WHITE.." custom lines") end
+        if #parts > 0 then
+            Print(table.concat(parts, " + ").." imported"..C_RESET)
+        else
+            Print(C_YELLOW.."No HR data found in text."..C_RESET)
+        end
+        eb:ClearFocus()
         UpdateStatus()
         f:Hide()
     end)
@@ -1983,6 +2021,7 @@ CreateHRImportFrame = function()
         wipe(hardReserveCustom)
         SausageRollImportDB.hardReserves = hardReserves
         SausageRollImportDB.hardReserveCustom = hardReserveCustom
+        SausageRollImportDB.lastHRText = nil
         eb:SetText(""); UpdateStatus()
         Print(C_YELLOW.."All HR items cleared."..C_RESET)
     end)
@@ -2043,7 +2082,7 @@ local function CreateMinimapButton()
     ov:SetPoint("TOPLEFT")
     local ic = btn:CreateTexture(nil,"BACKGROUND")
     ic:SetSize(20,20)
-    ic:SetTexture("Interface\\Icons\\INV_Scroll_03")
+    ic:SetTexture("Interface\\AddOns\\SausageRoll-SR\\Textures\\sausageroll")
     ic:SetPoint("CENTER",0,1)
 
     local angle = SausageRollImportDB.minimapAngle or 220
