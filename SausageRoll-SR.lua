@@ -4,6 +4,7 @@
 -- RW announce, roll tracking, winner eval, reimport
 ----------------------------------------------------------------------
 local ADDON_NAME = "SausageRoll-SR"
+local SR_MSG_PREFIX = "SAUSR"
 local SRI = CreateFrame("Frame", "SoftResImportFrame")
 
 local C_GREEN  = "|cff00ff00"
@@ -28,6 +29,7 @@ local isLootOpen = false
 local displayMode = "bag"  -- "loot" or "bag"
 local minQualityFilter = 2 -- 2=Green+, 3=Blue+, 4=Epic+
 local activeRoll = nil -- {itemId, link, mode, rolls={}}
+local clientRoll = nil -- client-side roll state from ML addon messages
 
 SausageRollImportDB = SausageRollImportDB or {}
 
@@ -131,6 +133,14 @@ local function SendRaid(msg, prefix)
         SendChatMessage(prefix.." "..msg, "PARTY")
     else
         Print(msg)
+    end
+end
+
+local function SendSR(msg)
+    local channel = IsInRaid() and "RAID" or
+                    (GetNumPartyMembers() > 0 and "PARTY" or nil)
+    if channel then
+        SendAddonMessage(SR_MSG_PREFIX, msg, channel)
     end
 end
 
@@ -917,6 +927,15 @@ local function StartRoll(uid, itemId, link, mode)
         SendRW(link.." - "..label.." ROLL! Everyone /roll now! (1 roll only)")
     end
     Print(C_GREEN.."Roll started: "..link.." ("..mode:upper().."). Click Winner to end."..C_RESET)
+    -- Addon message: Roll Start
+    local itemName, _, quality = GetItemInfo(itemId)
+    local eligible = ""
+    if mode == "sr" and reserves[itemId] then
+        local names = {}
+        for _, e in ipairs(reserves[itemId]) do table.insert(names, e.name) end
+        eligible = table.concat(names, ",")
+    end
+    SendSR("RS|"..(itemId or 0).."|"..(itemName or "").."|"..(quality or 0).."|"..mode.."|"..eligible)
     CreateRollWindow()
     RefreshRollWindow()
 end
@@ -926,6 +945,7 @@ local function AnnounceWinnerFinal()
     local r = activeRoll
     if #r.rolls == 0 then
         SendRW(r.link.." - No rolls received!")
+        SendSR("RE||")
         finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=nil}
         activeRoll = nil
         countdownTimer = nil
@@ -983,6 +1003,17 @@ local function AnnounceWinnerFinal()
         Print("  "..C_CYAN..roll.name..C_WHITE..": "..roll.roll..C_RESET)
     end
 
+    -- Addon message: Roll End
+    if winnerName then
+        local topRoll = 0
+        for _, roll in ipairs(r.rolls) do
+            if roll.name:lower() == winnerName:lower() and roll.roll > topRoll then topRoll = roll.roll end
+        end
+        SendSR("RE|"..winnerName.."|"..topRoll)
+    else
+        SendSR("RE||")
+    end
+
     -- Keep roll window open — store finished roll
     finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=winnerName}
     activeRoll = nil
@@ -1012,8 +1043,10 @@ local function UpdateCountdown(elapsed)
         countdownTimer.remaining = countdownTimer.remaining - 1
         if countdownTimer.remaining > 0 then
             SendRW(countdownTimer.remaining.."...")
+            SendSR("RC|"..countdownTimer.remaining)
         elseif countdownTimer.remaining == 0 then
             SendRW("STOP! Evaluating rolls...")
+            SendSR("RC|0")
             countdownTimer.remaining = -1
         else
             AnnounceWinnerFinal()
@@ -1049,6 +1082,7 @@ local function OnSystemMsg(msg)
         if allowedRolls == 0 then
             -- Not an SR holder - ignore silently (they might roll but it won't count)
             table.insert(activeRoll.rolls, {name=name, roll=roll, valid=false})
+            SendSR("RU|"..name.."|"..roll.."|0")
             RefreshRollWindow()
             return
         end
@@ -1063,6 +1097,7 @@ local function OnSystemMsg(msg)
 
         -- Valid SR roll
         table.insert(activeRoll.rolls, {name=name, roll=roll, valid=true})
+        SendSR("RU|"..name.."|"..roll.."|1")
     else
         -- MS: only 1 roll allowed per player
         if existingCount >= 1 then
@@ -1073,9 +1108,304 @@ local function OnSystemMsg(msg)
         end
 
         table.insert(activeRoll.rolls, {name=name, roll=roll, valid=true})
+        SendSR("RU|"..name.."|"..roll.."|1")
     end
 
     RefreshRollWindow()
+end
+
+----------------------------------------------------------------------
+-- Client Roll Window (for non-ML raid members with addon)
+----------------------------------------------------------------------
+local clientRollFrame = nil
+local clientRollRows = {}
+local clientHideTimer = nil
+
+local function CreateClientRollWindow()
+    if clientRollFrame then return end
+
+    local f = CreateFrame("Frame","SRIClientRollFrame",UIParent)
+    f:SetSize(280, 280)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    f:SetBackdrop({
+        bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile=true, tileSize=32, edgeSize=24,
+        insets={left=6,right=6,top=6,bottom=6},
+    })
+    f:SetBackdropColor(0, 0, 0, 0.95)
+    f:SetMovable(true); f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("HIGH")
+    f:SetClampedToScreen(true)
+
+    local closeX = CreateFrame("Button",nil,f,"UIPanelCloseButton")
+    closeX:SetPoint("TOPRIGHT",-2,-2)
+
+    -- Icon
+    local icon = f:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(28, 28)
+    icon:SetPoint("TOPLEFT", 10, -10)
+    f.icon = icon
+
+    -- Title (item name)
+    local t = f:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    t:SetPoint("TOPLEFT", 44, -10)
+    t:SetPoint("RIGHT", f, "RIGHT", -30, 0)
+    t:SetJustifyH("LEFT")
+    f.title = t
+
+    -- Subtitle (mode + countdown)
+    local st = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    st:SetPoint("TOPLEFT", 44, -28)
+    st:SetPoint("RIGHT", f, "RIGHT", -10, 0)
+    st:SetJustifyH("LEFT")
+    f.subtitle = st
+
+    -- Eligible line
+    local el = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    el:SetPoint("TOPLEFT", 10, -46)
+    el:SetPoint("RIGHT", f, "RIGHT", -10, 0)
+    el:SetJustifyH("LEFT")
+    el:SetWordWrap(true)
+    f.eligible = el
+
+    -- Scroll for roll list
+    local sc = CreateFrame("ScrollFrame", "SRIClientRollScroll", f, "UIPanelScrollFrameTemplate")
+    sc:SetPoint("TOPLEFT", 8, -64)
+    sc:SetPoint("BOTTOMRIGHT", -28, 30)
+
+    local ct = CreateFrame("Frame", nil, sc)
+    ct:SetWidth(sc:GetWidth())
+    ct:SetHeight(1)
+    sc:SetScrollChild(ct)
+    f.content = ct
+
+    -- Winner banner at bottom
+    local wb = f:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+    wb:SetPoint("BOTTOMLEFT", 10, 10)
+    wb:SetPoint("RIGHT", f, "RIGHT", -10, 0)
+    wb:SetJustifyH("CENTER")
+    f.winnerBanner = wb
+
+    f:Hide()
+    clientRollFrame = f
+end
+
+local function RefreshClientRollWindow()
+    if not clientRoll then
+        if clientRollFrame then clientRollFrame:Hide() end
+        return
+    end
+
+    CreateClientRollWindow()
+    clientRollFrame:Show()
+
+    -- Icon
+    local texture = GetItemIcon(clientRoll.itemId)
+    if texture then
+        clientRollFrame.icon:SetTexture(texture)
+        clientRollFrame.icon:Show()
+    else
+        clientRollFrame.icon:Hide()
+    end
+
+    -- Title: item name in quality color
+    local qColor = QCHex(clientRoll.quality or 1)
+    local modeTag = clientRoll.mode == "sr" and (C_GREEN.." [SR]"..C_RESET) or (C_ORANGE.." ["..clientRoll.mode:upper().."]"..C_RESET)
+    clientRollFrame.title:SetText(qColor..(clientRoll.itemName or "?")..C_RESET..modeTag)
+
+    -- Subtitle: countdown or roll count
+    if clientRoll.winner then
+        clientRollFrame.subtitle:SetText("")
+    elseif clientRoll.countdown then
+        if clientRoll.countdown > 0 then
+            clientRollFrame.subtitle:SetText(C_RED..">> "..clientRoll.countdown.." <<"..C_RESET)
+        else
+            clientRollFrame.subtitle:SetText(C_RED..">> STOP! <<"..C_RESET)
+        end
+    else
+        clientRollFrame.subtitle:SetText(C_GREEN.."("..#clientRoll.rolls.." rolls)"..C_RESET)
+    end
+
+    -- Eligible line (SR only) + personal indicator
+    local myName = UnitName("player")
+    if clientRoll.mode == "sr" and clientRoll.eligible and #clientRoll.eligible > 0 then
+        local iAmEligible = false
+        local displayNames = {}
+        for _, n in ipairs(clientRoll.eligible) do
+            if n:lower() == myName:lower() then
+                iAmEligible = true
+                table.insert(displayNames, C_GREEN..n..C_CYAN)
+            else
+                table.insert(displayNames, n)
+            end
+        end
+        local youTag = iAmEligible
+            and ("  "..C_GREEN..">> YOU are eligible! <<"..C_RESET)
+            or  ("  "..C_RED.."(you are NOT eligible)"..C_RESET)
+        clientRollFrame.eligible:SetText(C_CYAN.."SR: "..table.concat(displayNames, ", ")..C_RESET..youTag)
+        clientRollFrame.eligible:Show()
+    else
+        clientRollFrame.eligible:SetText("")
+        clientRollFrame.eligible:Hide()
+    end
+
+    -- Roll list
+    local rolls = clientRoll.rolls or {}
+    local validRolls = {}
+    local invalidRolls = {}
+    for _, r in ipairs(rolls) do
+        if r.valid then
+            table.insert(validRolls, r)
+        else
+            table.insert(invalidRolls, r)
+        end
+    end
+    table.sort(validRolls, function(a,b) return a.roll > b.roll end)
+
+    for _, fs in ipairs(clientRollRows) do fs:SetText(""); fs:Hide() end
+
+    local maxShow = 20
+    local yOff = 0
+    local totalToShow = #validRolls + #invalidRolls
+    for idx = 1, math.max(totalToShow, 1) do
+        if idx > maxShow then break end
+        if not clientRollRows[idx] then
+            local fs = clientRollFrame.content:CreateFontString(nil,"OVERLAY","GameFontNormal")
+            fs:SetJustifyH("LEFT")
+            table.insert(clientRollRows, fs)
+        end
+        local fs = clientRollRows[idx]
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", clientRollFrame.content, "TOPLEFT", 6, -yOff)
+        fs:SetPoint("RIGHT", clientRollFrame.content, "RIGHT", -6, 0)
+
+        if totalToShow == 0 then
+            fs:SetText(C_GRAY.."Waiting for /roll ..."..C_RESET)
+        elseif idx <= #validRolls then
+            local r = validRolls[idx]
+            local posColor = idx == 1 and C_GREEN or C_WHITE
+            fs:SetText(posColor..idx..". "..C_CYAN..r.name..C_WHITE.." - "..r.roll..C_RESET)
+        else
+            local r = invalidRolls[idx - #validRolls]
+            if r then
+                fs:SetText(C_GRAY.."  x "..r.name.." - "..r.roll.." (not eligible)"..C_RESET)
+            end
+        end
+        fs:Show()
+        yOff = yOff + 16
+    end
+    clientRollFrame.content:SetHeight(math.max(yOff + 4, 1))
+
+    -- Winner banner (personal highlight if YOU won)
+    if clientRoll.winner then
+        if clientRoll.winner:lower() == myName:lower() then
+            clientRollFrame.winnerBanner:SetText(C_GREEN..">>> YOU WON! ("..clientRoll.winnerRoll..") <<<"..C_RESET)
+        else
+            clientRollFrame.winnerBanner:SetText(C_GREEN..">> "..C_CYAN..clientRoll.winner..C_GREEN.." WINS! ("..clientRoll.winnerRoll..") <<"..C_RESET)
+        end
+        clientRollFrame.winnerBanner:Show()
+    elseif clientRoll.noWinner then
+        clientRollFrame.winnerBanner:SetText(C_RED.."No winner"..C_RESET)
+        clientRollFrame.winnerBanner:Show()
+    else
+        clientRollFrame.winnerBanner:SetText("")
+        clientRollFrame.winnerBanner:Hide()
+    end
+end
+
+local function ScheduleClientHide(seconds)
+    if clientHideTimer then clientHideTimer:SetScript("OnUpdate", nil) end
+    clientHideTimer = clientHideTimer or CreateFrame("Frame")
+    local waited = 0
+    clientHideTimer:SetScript("OnUpdate", function(self, elapsed)
+        waited = waited + elapsed
+        if waited >= seconds then
+            self:SetScript("OnUpdate", nil)
+            clientRoll = nil
+            if clientRollFrame then clientRollFrame:Hide() end
+        end
+    end)
+end
+
+local function OnAddonMessage(msg, sender)
+    -- ML ignores own messages (uses existing rollFrame)
+    if sender == UnitName("player") then return end
+
+    local parts = {strsplit("|", msg)}
+    local cmd = parts[1]
+
+    if cmd == "RS" then
+        -- Roll Start: RS|itemId|itemName|quality|mode|eligible1,eligible2,...
+        if clientHideTimer then clientHideTimer:SetScript("OnUpdate", nil) end
+        local itemId = tonumber(parts[2]) or 0
+        local itemName = parts[3] or "?"
+        local quality = tonumber(parts[4]) or 1
+        local mode = parts[5] or "ms"
+        local eligibleStr = parts[6] or ""
+        local eligible = {}
+        if eligibleStr ~= "" then
+            for name in eligibleStr:gmatch("[^,]+") do
+                table.insert(eligible, name)
+            end
+        end
+        clientRoll = {
+            itemId = itemId,
+            itemName = itemName,
+            quality = quality,
+            mode = mode,
+            eligible = eligible,
+            rolls = {},
+            countdown = nil,
+            winner = nil,
+            winnerRoll = nil,
+            noWinner = false,
+        }
+        RefreshClientRollWindow()
+
+    elseif cmd == "RU" then
+        -- Roll Update: RU|playerName|rollNumber|valid
+        if not clientRoll then return end
+        local playerName = parts[2] or "?"
+        local rollNum = tonumber(parts[3]) or 0
+        local valid = parts[4] == "1"
+        table.insert(clientRoll.rolls, {name=playerName, roll=rollNum, valid=valid})
+        RefreshClientRollWindow()
+
+    elseif cmd == "RC" then
+        -- Roll Countdown: RC|seconds
+        if not clientRoll then return end
+        clientRoll.countdown = tonumber(parts[2]) or 0
+        RefreshClientRollWindow()
+
+    elseif cmd == "RE" then
+        -- Roll End: RE|winnerName|rollNumber  or  RE||
+        if not clientRoll then return end
+        local winnerName = parts[2]
+        local winnerRoll = parts[3]
+        if winnerName and winnerName ~= "" then
+            clientRoll.winner = winnerName
+            clientRoll.winnerRoll = tonumber(winnerRoll) or 0
+            -- Play victory sound if local player won
+            if winnerName:lower() == UnitName("player"):lower() then
+                PlaySoundFile("Interface\\AddOns\\SausageRoll-SR\\audio\\winner.ogg")
+            end
+        else
+            clientRoll.noWinner = true
+        end
+        clientRoll.countdown = nil
+        RefreshClientRollWindow()
+        ScheduleClientHide(8)
+
+    elseif cmd == "RX" then
+        -- Roll Cancel
+        if clientHideTimer then clientHideTimer:SetScript("OnUpdate", nil) end
+        clientRoll = nil
+        if clientRollFrame then clientRollFrame:Hide() end
+    end
 end
 
 -- Lightweight trade timer display update (no full rebuild)
@@ -1397,6 +1727,7 @@ local function SetupRow(row, item, mode)
             end
             -- 2) Clear active/finished roll for this item
             if activeRoll and activeRoll.uid == item.uid then
+                SendSR("RX")
                 activeRoll = nil
                 countdownTimer = nil
             end
@@ -2241,6 +2572,7 @@ SRI:RegisterEvent("BAG_UPDATE")
 SRI:RegisterEvent("CHAT_MSG_SYSTEM")
 SRI:RegisterEvent("TRADE_SHOW")
 SRI:RegisterEvent("TRADE_ACCEPT_UPDATE")
+SRI:RegisterEvent("CHAT_MSG_ADDON")
 
 SRI:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -2252,6 +2584,7 @@ SRI:SetScript("OnEvent", function(self, event, ...)
             if SausageRollImportDB.bankCharName then bankCharName = SausageRollImportDB.bankCharName end
             if SausageRollImportDB.hardReserves then hardReserves = SausageRollImportDB.hardReserves end
             if SausageRollImportDB.hardReserveCustom then hardReserveCustom = SausageRollImportDB.hardReserveCustom end
+            RegisterAddonMessagePrefix(SR_MSG_PREFIX)
             CreateMinimapButton()
             if importCount > 0 then
                 Print(C_GREEN.."Loaded! "..C_WHITE..importCount.." reserves. /sr to open."..C_RESET)
@@ -2302,5 +2635,10 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "TRADE_ACCEPT_UPDATE" then
         ScheduleRefresh(0.5)
+    elseif event == "CHAT_MSG_ADDON" then
+        local prefix, msg, channel, sender = ...
+        if prefix == SR_MSG_PREFIX then
+            OnAddonMessage(msg, sender)
+        end
     end
 end)
