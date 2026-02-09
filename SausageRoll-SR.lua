@@ -2632,7 +2632,9 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         ScheduleRefresh(0.5)
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, msg, channel, sender = ...
+        print("[SR DEBUG] prefix="..(prefix or "nil").." chan="..(channel or "nil").." from="..(sender or "nil").." msg="..(msg or "nil"))
         if prefix == SR_MSG_PREFIX then
+            print("[SR DEBUG] MATCH! Calling OnAddonMessage")
             OnAddonMessage(msg, sender)
         end
     end
