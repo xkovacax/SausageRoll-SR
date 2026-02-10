@@ -139,8 +139,11 @@ end
 local function SendSR(msg)
     local channel = IsInRaid() and "RAID" or
                     (GetNumPartyMembers() > 0 and "PARTY" or nil)
+    print("[SR DEBUG SEND] channel="..(channel or "NIL").." prefix="..SR_MSG_PREFIX.." msg="..(msg or "nil"))
     if channel then
         SendAddonMessage(SR_MSG_PREFIX, msg, channel)
+    else
+        print("[SR DEBUG SEND] NO CHANNEL - message not sent!")
     end
 end
 
@@ -2632,9 +2635,8 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         ScheduleRefresh(0.5)
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, msg, channel, sender = ...
-        print("[SR DEBUG] prefix="..(prefix or "nil").." chan="..(channel or "nil").." from="..(sender or "nil").." msg="..(msg or "nil"))
         if prefix == SR_MSG_PREFIX then
-            print("[SR DEBUG] MATCH! Calling OnAddonMessage")
+            print("[SR DEBUG] from="..(sender or "nil").." chan="..(channel or "nil").." msg="..(msg or "nil"))
             OnAddonMessage(msg, sender)
         end
     end
