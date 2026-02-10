@@ -27,6 +27,7 @@ local hardReserveCustom = {}
 local isLootOpen = false
 local displayMode = "bag"  -- "loot" or "bag"
 local minQualityFilter = 2 -- 2=Green+, 3=Blue+, 4=Epic+
+local showBoE = false      -- show Bind on Equip items
 local activeRoll = nil -- {itemId, link, mode, rolls={}}
 
 SausageRollImportDB = SausageRollImportDB or {}
@@ -63,6 +64,22 @@ local function GetTradeTimeFromBag(bag, slot)
         end
     end
     return nil
+end
+
+-- Check if item is Bind on Equip (tooltip scanning)
+local function IsBoEFromBag(bag, slot)
+    scanTip:ClearLines()
+    scanTip:SetBagItem(bag, slot)
+    for i = 1, scanTip:NumLines() do
+        local left = _G["SRIScanTooltipTextLeft"..i]
+        if left then
+            local text = left:GetText()
+            if text and text:match("Binds when equipped") then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 -- Check if item in loot window (loot items are always tradeable while in loot)
@@ -134,8 +151,9 @@ local function SendRaid(msg, prefix)
     end
 end
 
--- Bank/Diss default character
+-- Bank and Disenchant default characters
 local bankCharName = nil
+local dissCharName = nil
 
 -- Award log: tracks who won which items (history for chat print)
 -- Each entry: {itemId, winner, link}
@@ -289,6 +307,36 @@ local function GetUnitIdByName(targetName)
     return nil
 end
 
+-- Get sorted list of all group members (for dropdown menus)
+local function GetGroupMembers()
+    local members = {}
+    local seen = {}
+    if IsInRaid() then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and not seen[name:lower()] then
+                seen[name:lower()] = true
+                table.insert(members, name)
+            end
+        end
+    else
+        local myName = UnitName("player")
+        if myName then
+            seen[myName:lower()] = true
+            table.insert(members, myName)
+        end
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and not seen[name:lower()] then
+                seen[name:lower()] = true
+                table.insert(members, name)
+            end
+        end
+    end
+    table.sort(members)
+    return members
+end
+
 -- Check if player is the Master Looter
 local function IsMasterLooter()
     local method, pID, rID = GetLootMethod()
@@ -426,6 +474,7 @@ local function ClearAllData()
     activeRoll = nil
     displayMode = "bag"
     minQualityFilter = 2
+    showBoE = false
     SausageRollImportDB.reserves = {}
     SausageRollImportDB.reservesByName = {}
     SausageRollImportDB.importCount = 0
@@ -598,6 +647,7 @@ local function GetVisibleSRItems()
                     local itemId = GetItemIdFromLink(link)
                     if itemId and reserves[itemId] then
                         local tradeTime = GetTradeTimeFromBag(bag, slot)
+                        local isBoE = showBoE and (not tradeTime) and IsBoEFromBag(bag, slot)
                         local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link)
                         if quality and quality >= minQualityFilter then
                             local slotKey = "bag:"..bag..":"..slot
@@ -612,6 +662,7 @@ local function GetVisibleSRItems()
                                 tradeTime=tradeTime,
                                 tradeTimeScannedAt=tradeTime and GetTime() or nil,
                                 bag=bag, slot=slot, uid=uid,
+                                isBoE=isBoE,
                                 state=awardWinner and "AWARDED" or "HOLD",
                                 awardWinner=awardWinner,
                             })
@@ -665,7 +716,8 @@ local function GetMSRollItems()
                     local itemId = GetItemIdFromLink(link)
                     if itemId and not reserves[itemId] then
                         local tradeTime = GetTradeTimeFromBag(bag, slot)
-                        if tradeTime then
+                        local isBoE = showBoE and (not tradeTime) and IsBoEFromBag(bag, slot)
+                        if tradeTime or isBoE then
                             local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link)
                             if quality and quality >= minQualityFilter then
                                 local slotKey = "bag:"..bag..":"..slot
@@ -678,6 +730,7 @@ local function GetMSRollItems()
                                     source="bag", tradeTime=tradeTime,
                                     tradeTimeScannedAt=tradeTime and GetTime() or nil,
                                     bag=bag, slot=slot, uid=uid,
+                                    isBoE=isBoE,
                                     state=awardWinner and "AWARDED" or "HOLD",
                                     awardWinner=awardWinner,
                                 })
@@ -716,7 +769,7 @@ end
 local COUNTDOWN_SECS = 3
 local countdownTimer = nil
 local rollFrame = nil  -- separate roll window
-local rollRows = {}    -- FontString lines in roll window
+local rollRows = {}    -- Frame rows in roll window
 local finishedRoll = nil -- stores last finished roll info {itemId, link, mode, winner, rolls}
 
 local function CloseRollWindow()
@@ -770,58 +823,143 @@ local function RefreshRollWindow()
     -- Get rolls to display
     local rolls = rollData.rolls or {}
     local validRolls = {}
+    local excludedRolls = {}
     local invalidRolls = {}
     for _, r in ipairs(rolls) do
         if r.valid == false then
             table.insert(invalidRolls, r)
+        elseif r.excluded then
+            table.insert(excludedRolls, r)
         else
             table.insert(validRolls, r)
         end
     end
     table.sort(validRolls, function(a,b) return a.roll > b.roll end)
+    table.sort(excludedRolls, function(a,b) return a.roll > b.roll end)
 
-    -- Hide old lines
-    for _, fs in ipairs(rollRows) do fs:SetText(""); fs:Hide() end
+    -- Hide old rows
+    for _, row in ipairs(rollRows) do row.text:SetText(""); row:Hide() end
 
     local maxShow = 20
     local yOff = 0
-    local totalToShow = #validRolls + #invalidRolls
-    for idx = 1, math.max(totalToShow, 1) do
-        if idx > maxShow then break end
-        if not rollRows[idx] then
-            local fs = rollFrame.content:CreateFontString(nil,"OVERLAY","GameFontNormal")
-            fs:SetJustifyH("LEFT")
-            table.insert(rollRows, fs)
-        end
-        local fs = rollRows[idx]
-        fs:ClearAllPoints()
-        fs:SetPoint("TOPLEFT", rollFrame.content, "TOPLEFT", 6, -yOff)
-        fs:SetPoint("RIGHT", rollFrame.content, "RIGHT", -6, 0)
+    local isActive = (activeRoll ~= nil)
+    local totalToShow = #validRolls + #excludedRolls + #invalidRolls
+    local displayIdx = 0
 
-        if totalToShow == 0 then
-            fs:SetText(C_GRAY.."Waiting for /roll ..."..C_RESET)
-        elseif idx <= #validRolls then
-            local r = validRolls[idx]
-            local srTag = ""
-            if rollData.mode == "sr" then
-                local entries = reserves[rollData.itemId] or {}
-                for _, e in ipairs(entries) do
-                    if r.name:lower() == e.name:lower() then
-                        srTag = C_GREEN.." [SR]"..C_RESET
-                        break
-                    end
+    -- Helper to get or create a roll row frame
+    local function GetRow(idx)
+        if not rollRows[idx] then
+            local row = CreateFrame("Frame", nil, rollFrame.content)
+            row:SetHeight(16)
+
+            local btn = CreateFrame("Button", nil, row)
+            btn:SetSize(14, 14)
+            btn:SetPoint("LEFT", 0, 0)
+            btn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8"})
+            btn:SetBackdropColor(0, 0, 0, 0.6)
+            local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            btnText:SetPoint("CENTER")
+            row.excludeBtn = btn
+            row.excludeBtnText = btnText
+            btn:SetScript("OnClick", function(self)
+                if self.rollData then
+                    self.rollData.excluded = not self.rollData.excluded
+                    RefreshRollWindow()
+                end
+            end)
+
+            local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            fs:SetJustifyH("LEFT")
+            fs:SetPoint("LEFT", 18, 0)
+            fs:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+            row.text = fs
+
+            table.insert(rollRows, row)
+        end
+        return rollRows[idx]
+    end
+
+    -- Display valid rolls
+    for i, r in ipairs(validRolls) do
+        displayIdx = displayIdx + 1
+        if displayIdx > maxShow then break end
+        local row = GetRow(displayIdx)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", rollFrame.content, "TOPLEFT", 6, -yOff)
+        row:SetPoint("RIGHT", rollFrame.content, "RIGHT", -6, 0)
+
+        local srTag = ""
+        if rollData.mode == "sr" then
+            local entries = reserves[rollData.itemId] or {}
+            for _, e in ipairs(entries) do
+                if r.name:lower() == e.name:lower() then
+                    srTag = C_GREEN.." [SR]"..C_RESET
+                    break
                 end
             end
-            local posColor = idx == 1 and C_GREEN or C_WHITE
-            fs:SetText(posColor..idx..". "..C_CYAN..r.name..C_WHITE.." - "..r.roll..srTag..C_RESET)
-        else
-            local r = invalidRolls[idx - #validRolls]
-            if r then
-                fs:SetText(C_GRAY.."  x "..r.name.." - "..r.roll.." (not eligible)"..C_RESET)
-            end
         end
-        fs:Show()
+        local posColor = i == 1 and C_GREEN or C_WHITE
+        row.text:SetText(posColor..i..". "..C_CYAN..r.name..C_WHITE.." - "..r.roll..srTag..C_RESET)
+
+        if isActive then
+            row.excludeBtn.rollData = r
+            row.excludeBtnText:SetText(C_RED.."X"..C_RESET)
+            row.excludeBtn:Show()
+        else
+            row.excludeBtn:Hide()
+        end
+        row:Show()
         yOff = yOff + 16
+    end
+
+    -- Display excluded rolls
+    for _, r in ipairs(excludedRolls) do
+        displayIdx = displayIdx + 1
+        if displayIdx > maxShow then break end
+        local row = GetRow(displayIdx)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", rollFrame.content, "TOPLEFT", 6, -yOff)
+        row:SetPoint("RIGHT", rollFrame.content, "RIGHT", -6, 0)
+
+        row.text:SetText(C_GRAY..r.name.." - "..r.roll.." [EXCLUDED]"..C_RESET)
+
+        if isActive then
+            row.excludeBtn.rollData = r
+            row.excludeBtnText:SetText(C_GREEN.."+"..C_RESET)
+            row.excludeBtn:Show()
+        else
+            row.excludeBtn:Hide()
+        end
+        row:Show()
+        yOff = yOff + 16
+    end
+
+    -- Display invalid rolls
+    for _, r in ipairs(invalidRolls) do
+        displayIdx = displayIdx + 1
+        if displayIdx > maxShow then break end
+        local row = GetRow(displayIdx)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", rollFrame.content, "TOPLEFT", 6, -yOff)
+        row:SetPoint("RIGHT", rollFrame.content, "RIGHT", -6, 0)
+
+        row.text:SetText(C_GRAY.."  x "..r.name.." - "..r.roll.." (not eligible)"..C_RESET)
+        row.excludeBtn:Hide()
+        row:Show()
+        yOff = yOff + 16
+    end
+
+    -- "Waiting" message if no rolls
+    if totalToShow == 0 then
+        displayIdx = 1
+        local row = GetRow(1)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", rollFrame.content, "TOPLEFT", 6, 0)
+        row:SetPoint("RIGHT", rollFrame.content, "RIGHT", -6, 0)
+        row.text:SetText(C_GRAY.."Waiting for /roll ..."..C_RESET)
+        row.excludeBtn:Hide()
+        row:Show()
+        yOff = 16
     end
 
     rollFrame.content:SetHeight(math.max(yOff + 4, 1))
@@ -872,13 +1010,20 @@ local function CreateRollWindow()
     -- Scroll for roll list
     local sc = CreateFrame("ScrollFrame", "SRIRollScroll", f, "UIPanelScrollFrameTemplate")
     sc:SetPoint("TOPLEFT", 8, -46)
-    sc:SetPoint("BOTTOMRIGHT", -28, 8)
+    sc:SetPoint("BOTTOMRIGHT", -28, 34)
 
     local ct = CreateFrame("Frame", nil, sc)
     ct:SetWidth(sc:GetWidth())
     ct:SetHeight(1)
     sc:SetScrollChild(ct)
     f.content = ct
+
+    -- /roll button at bottom
+    local rollBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    rollBtn:SetSize(120, 22)
+    rollBtn:SetPoint("BOTTOM", 0, 8)
+    rollBtn:SetText("/roll")
+    rollBtn:SetScript("OnClick", function() RandomRoll(1, 100) end)
 
     f:Hide()
     rollFrame = f
@@ -939,7 +1084,7 @@ local function AnnounceWinnerFinal()
         local srRolls = {}
         local entries = reserves[r.itemId] or {}
         for _, roll in ipairs(r.rolls) do
-            if roll.valid then
+            if roll.valid and not roll.excluded then
                 for _, e in ipairs(entries) do
                     if roll.name:lower() == e.name:lower() then
                         table.insert(srRolls, roll)
@@ -961,7 +1106,7 @@ local function AnnounceWinnerFinal()
     else
         local validRolls = {}
         for _, roll in ipairs(r.rolls) do
-            if roll.valid ~= false then
+            if roll.valid ~= false and not roll.excluded then
                 table.insert(validRolls, roll)
             end
         end
@@ -980,7 +1125,8 @@ local function AnnounceWinnerFinal()
     Print(C_GRAY.."All rolls:"..C_RESET)
     table.sort(r.rolls, function(a,b) return a.roll > b.roll end)
     for _, roll in ipairs(r.rolls) do
-        Print("  "..C_CYAN..roll.name..C_WHITE..": "..roll.roll..C_RESET)
+        local exTag = roll.excluded and (" "..C_RED.."[EXCLUDED]"..C_RESET) or ""
+        Print("  "..C_CYAN..roll.name..C_WHITE..": "..roll.roll..exTag..C_RESET)
     end
 
     -- Keep roll window open — store finished roll
@@ -1169,6 +1315,7 @@ local mainFrame, srRows, msRows = nil, {}, {}
 local ROW_HEIGHT = 42
 local MS_ROW_HEIGHT = 56
 local rollModeMenuFrame = CreateFrame("Frame", "SRI_RollModeMenu", UIParent, "UIDropDownMenuTemplate")
+local charDropdownFrame = CreateFrame("Frame", "SRI_CharDropdownMenu", UIParent, "UIDropDownMenuTemplate")
 
 ----------------------------------------------------------------------
 -- GUI: Row builder
@@ -1192,11 +1339,10 @@ local function CreateRow(parent, rowTable, index, mode)
     iconTex:SetAllPoints()
     row.iconTex = iconTex
 
-    local brd = iconBtn:CreateTexture(nil,"OVERLAY")
-    brd:SetSize(34,34)
-    brd:SetPoint("CENTER")
-    brd:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    brd:SetBlendMode("ADD")
+    local brd = CreateFrame("Frame", nil, iconBtn)
+    brd:SetPoint("TOPLEFT", -2, 2)
+    brd:SetPoint("BOTTOMRIGHT", 2, -2)
+    brd:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2})
     row.iconBorder = brd
 
     iconBtn:SetScript("OnEnter", function(self)
@@ -1218,6 +1364,13 @@ local function CreateRow(parent, rowTable, index, mode)
     bankBtn:SetText("Bank")
     bankBtn:GetFontString():SetFont(bankBtn:GetFontString():GetFont(), BF)
     row.bankBtn = bankBtn
+
+    local dissBtn = CreateFrame("Button", rn.."D", row, "UIPanelButtonTemplate")
+    dissBtn:SetSize(BW, 16)
+    dissBtn:SetPoint("BOTTOM", bankBtn, "TOP", 0, 2)
+    dissBtn:SetText("Diss")
+    dissBtn:GetFontString():SetFont(dissBtn:GetFontString():GetFont(), 8)
+    row.dissBtn = dissBtn
 
     local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
     tradeBtn:SetSize(BW, BH)
@@ -1260,7 +1413,7 @@ local function CreateRow(parent, rowTable, index, mode)
 
         local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
         resetBtn:SetSize(BW, 16)
-        resetBtn:SetPoint("BOTTOMRIGHT", bankBtn, "TOPRIGHT", 0, 2)
+        resetBtn:SetPoint("BOTTOMLEFT", tradeBtn, "TOPLEFT", 0, 2)
         resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
         resetBtn:SetText("Reset")
         row.resetBtn = resetBtn
@@ -1322,7 +1475,7 @@ local function SetupRow(row, item, mode)
     row.link = item.link
     row.iconTex:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     local qc = QC(item.quality)
-    row.iconBorder:SetVertexColor(qc.r, qc.g, qc.b, 0.8)
+    row.iconBorder:SetBackdropBorderColor(qc.r, qc.g, qc.b, 0.8)
     row.itemText:SetText(QCHex(item.quality)..(item.name or "?")..C_RESET)
 
     if mode == "sr" and item.reservers then
@@ -1374,6 +1527,8 @@ local function SetupRow(row, item, mode)
             if totalMins < 10 then tColor = C_RED
             elseif totalMins < 30 then tColor = C_YELLOW end
             row.tradeText:SetText(tColor..timeStr..C_RESET)
+        elseif item.isBoE then
+            row.tradeText:SetText(C_GREEN.."BoE"..C_RESET)
         else
             row.tradeText:SetText(C_GRAY.."BAG"..C_RESET)
         end
@@ -1403,9 +1558,6 @@ local function SetupRow(row, item, mode)
             if finishedRoll and finishedRoll.uid == item.uid then
                 CloseRollWindow()
             end
-            -- 3) Switch mode to OS (user can manually Roll when ready)
-            row.rollMode = "os"
-            if row.modeBtn then row.modeBtn:SetText("OS") end
             RefreshMainFrame()
         end)
         -- Reset is always enabled (even for AWARDED items)
@@ -1456,6 +1608,15 @@ local function SetupRow(row, item, mode)
             return
         end
         TryTradeItem(bankCharName, item.itemId, item.link, item.uid)
+        if finishedRoll and finishedRoll.uid == item.uid then CloseRollWindow() end
+    end)
+
+    row.dissBtn:SetScript("OnClick", function()
+        if not dissCharName then
+            Print(C_RED.."Set diss char: /sr diss <name>"..C_RESET)
+            return
+        end
+        TryTradeItem(dissCharName, item.itemId, item.link, item.uid)
         if finishedRoll and finishedRoll.uid == item.uid then CloseRollWindow() end
     end)
 
@@ -1532,13 +1693,11 @@ RefreshMainFrame = function()
     mainFrame.statusText:SetText(
         C_GREEN..importCount..C_WHITE.." SR | "..
         C_GREEN..pc..C_WHITE.." players"..rs)
-    -- Bank display
+    -- Bank/Diss display
     if mainFrame.bankText then
-        if bankCharName then
-            mainFrame.bankText:SetText(C_GRAY.."Bank/Diss: "..C_CYAN..bankCharName..C_RESET)
-        else
-            mainFrame.bankText:SetText(C_GRAY.."Bank/Diss: "..C_RED.."not set (/sr bank <n>)"..C_RESET)
-        end
+        local bankStr = bankCharName and (C_CYAN..bankCharName..C_RESET) or (C_RED.."not set"..C_RESET)
+        local dissStr = dissCharName and (C_CYAN..dissCharName..C_RESET) or (C_RED.."not set"..C_RESET)
+        mainFrame.bankText:SetText(C_GRAY.."Bank: "..bankStr..C_GRAY.." | Diss: "..dissStr)
     end
 end
 
@@ -1580,8 +1739,8 @@ local function CreateMainFrame(silent)
 
     -- Rarity filter dropdown
     local dd = CreateFrame("Frame", "SRIRarityDropdown", f, "UIDropDownMenuTemplate")
-    dd:SetPoint("TOPLEFT", 0, -4)
-    UIDropDownMenu_SetWidth(dd, 80)
+    dd:SetPoint("TOPLEFT", -6, -14)
+    UIDropDownMenu_SetWidth(dd, 96)
 
     local rarityOptions = {
         {text="Green+",  value=2, r=0.12, g=1,    b=0},
@@ -1615,6 +1774,24 @@ local function CreateMainFrame(silent)
         end
     end
     f.rarityDropdown = dd
+
+    -- BoE checkbox (next to rarity dropdown)
+    local boeCheck = CreateFrame("CheckButton", nil, f)
+    boeCheck:SetSize(20, 20)
+    boeCheck:SetPoint("LEFT", dd, "RIGHT", -2, 2)
+    boeCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+    boeCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+    boeCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+    boeCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    boeCheck:SetChecked(showBoE)
+    boeCheck.label = boeCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    boeCheck.label:SetPoint("LEFT", boeCheck, "RIGHT", 2, 0)
+    boeCheck.label:SetText(C_GREEN.."BoE")
+    boeCheck:SetScript("OnClick", function(self)
+        showBoE = self:GetChecked()
+        RefreshMainFrame()
+    end)
+    f.boeCheckbox = boeCheck
 
     local sc = CreateFrame("ScrollFrame","SRIMainScroll",f,"UIPanelScrollFrameTemplate")
     sc:SetPoint("TOPLEFT",10,-66)
@@ -1678,73 +1855,71 @@ local function CreateMainFrame(silent)
     credit:SetPoint("BOTTOM",0,10)
     credit:SetText(C_GRAY.."Sausage Roll - SR created by Sausage Party"..C_RESET)
 
-    -- Set Bank/Diss button — opens input popup
-    local btnBank = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnBank:SetSize(90,22); btnBank:SetPoint("BOTTOM",-55,24)
-    btnBank:SetText("Set Bank/Diss")
-    btnBank:SetScript("OnClick", function()
-        -- Create or show bank input popup
-        if not f.bankPopup then
-            local bp = CreateFrame("Frame","SRIBankPopup",f)
-            bp:SetSize(260,80)
-            bp:SetPoint("CENTER",f,"CENTER",0,0)
-            bp:SetBackdrop({
-                bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-                edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
-                tile=true, tileSize=32, edgeSize=24,
-                insets={left=6,right=6,top=6,bottom=6},
-            })
-            bp:SetBackdropColor(0,0,0,0.98)
-            bp:SetFrameStrata("TOOLTIP")
-            bp:EnableMouse(true)
-
-            local lbl = bp:CreateFontString(nil,"OVERLAY","GameFontNormal")
-            lbl:SetPoint("TOP",0,-12)
-            lbl:SetText(C_YELLOW.."Bank/Diss Character Name:"..C_RESET)
-
-            local eb = CreateFrame("EditBox","SRIBankEditBox",bp,"InputBoxTemplate")
-            eb:SetSize(160,20)
-            eb:SetPoint("TOP",0,-32)
-            eb:SetAutoFocus(true)
-            if bankCharName then eb:SetText(bankCharName) end
-            bp.editBox = eb
-
-            local okBtn = CreateFrame("Button",nil,bp,"UIPanelButtonTemplate")
-            okBtn:SetSize(60,20); okBtn:SetPoint("BOTTOMLEFT",30,10)
-            okBtn:SetText("OK")
-            okBtn:SetScript("OnClick", function()
-                local val = eb:GetText():match("^%s*(.-)%s*$")
-                if val and val ~= "" then
-                    bankCharName = CapitalizeName(val)
+    -- Set Bank button — dropdown from group members
+    local btnSetBank = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnSetBank:SetSize(90,22); btnSetBank:SetPoint("BOTTOM",-48,36)
+    btnSetBank:SetText("Set Bank")
+    btnSetBank:SetScript("OnClick", function(self)
+        local members = GetGroupMembers()
+        local menuList = {}
+        for _, name in ipairs(members) do
+            table.insert(menuList, {
+                text = name,
+                checked = (bankCharName and bankCharName:lower() == name:lower()),
+                func = function()
+                    bankCharName = name
                     SausageRollImportDB.bankCharName = bankCharName
-                    Print(C_GREEN.."Bank/Diss set to: "..C_CYAN..bankCharName..C_RESET)
+                    Print(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
                     RefreshMainFrame()
-                end
-                bp:Hide()
-            end)
-
-            eb:SetScript("OnEnterPressed", function()
-                okBtn:Click()
-            end)
-
-            local cancelBtn = CreateFrame("Button",nil,bp,"UIPanelButtonTemplate")
-            cancelBtn:SetSize(60,20); cancelBtn:SetPoint("BOTTOMRIGHT",-30,10)
-            cancelBtn:SetText("Cancel")
-            cancelBtn:SetScript("OnClick", function() bp:Hide() end)
-
-            eb:SetScript("OnEscapePressed", function() bp:Hide() end)
-
-            f.bankPopup = bp
-        else
-            f.bankPopup.editBox:SetText(bankCharName or "")
-            f.bankPopup:Show()
-            f.bankPopup.editBox:SetFocus()
+                end,
+            })
         end
+        table.insert(menuList, {
+            text = "-- Clear --",
+            func = function()
+                bankCharName = nil
+                SausageRollImportDB.bankCharName = nil
+                Print(C_YELLOW.."Bank char cleared."..C_RESET)
+                RefreshMainFrame()
+            end,
+        })
+        EasyMenu(menuList, charDropdownFrame, self, 0, 0, "MENU")
+    end)
+
+    -- Set Diss button — dropdown from group members
+    local btnSetDiss = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnSetDiss:SetSize(90,22); btnSetDiss:SetPoint("BOTTOM",48,36)
+    btnSetDiss:SetText("Set Diss")
+    btnSetDiss:SetScript("OnClick", function(self)
+        local members = GetGroupMembers()
+        local menuList = {}
+        for _, name in ipairs(members) do
+            table.insert(menuList, {
+                text = name,
+                checked = (dissCharName and dissCharName:lower() == name:lower()),
+                func = function()
+                    dissCharName = name
+                    SausageRollImportDB.dissCharName = dissCharName
+                    Print(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
+                    RefreshMainFrame()
+                end,
+            })
+        end
+        table.insert(menuList, {
+            text = "-- Clear --",
+            func = function()
+                dissCharName = nil
+                SausageRollImportDB.dissCharName = nil
+                Print(C_YELLOW.."Diss char cleared."..C_RESET)
+                RefreshMainFrame()
+            end,
+        })
+        EasyMenu(menuList, charDropdownFrame, self, 0, 0, "MENU")
     end)
 
     -- Grab All Loot to ML button
     local btnGrab = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnGrab:SetSize(90,22); btnGrab:SetPoint("BOTTOM",45,24)
+    btnGrab:SetSize(120,22); btnGrab:SetPoint("TOPLEFT",10,-40)
     btnGrab:SetText("Grab All Loot")
     btnGrab:SetScript("OnClick", function()
         if not isLootOpen then
@@ -1789,9 +1964,9 @@ local function CreateMainFrame(silent)
         end
     end)
 
-    -- Bank name display
+    -- Bank/Diss name display
     local bankText = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-    bankText:SetPoint("BOTTOM", 0, 48)
+    bankText:SetPoint("BOTTOM", 0, 60)
     f.bankText = bankText
 
     local btn1 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
@@ -2115,9 +2290,10 @@ local function CreateMinimapButton()
     btn:SetScript("OnClick", function(self, button)
         if button=="LeftButton" then
             displayMode = "bag"
-            if importCount>0 then CreateMainFrame() else CreateImportFrame() end
+            CreateMainFrame()
         elseif button=="RightButton" then
-            CreateImportFrame()
+            displayMode = "bag"
+            CreateMainFrame()
         end
     end)
     btn:SetScript("OnEnter", function(self)
@@ -2175,20 +2351,33 @@ local function HandleSlash(msg)
         local ic=0 for _ in pairs(reserves) do ic=ic+1 end
         Print(C_GREEN..importCount..C_WHITE.." SR | "..C_GREEN..pc..C_WHITE.." players | "..C_GREEN..ic..C_WHITE.." items"..C_RESET)
     elseif cmd=="winner" then StartCountdown()
-    elseif cmd=="bank" or cmd=="diss" then
+    elseif cmd=="bank" then
         if arg=="" then
             if bankCharName then
-                Print(C_WHITE.."Bank/Diss char: "..C_CYAN..bankCharName..C_RESET)
+                Print(C_WHITE.."Bank char: "..C_CYAN..bankCharName..C_RESET)
             else
-                Print(C_RED.."/sr bank <n> - set bank/disenchanter"..C_RESET)
+                Print(C_RED.."/sr bank <n> - set bank character"..C_RESET)
             end
             return
         end
         bankCharName = CapitalizeName(arg)
         SausageRollImportDB.bankCharName = bankCharName
-        Print(C_GREEN.."Bank/Diss set to: "..C_CYAN..bankCharName..C_RESET)
+        Print(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
         if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
-    else Print("/sr | /sr import | /sr clear | /sr check <n> | /sr bank <n> | /sr winner") end
+    elseif cmd=="diss" then
+        if arg=="" then
+            if dissCharName then
+                Print(C_WHITE.."Diss char: "..C_CYAN..dissCharName..C_RESET)
+            else
+                Print(C_RED.."/sr diss <n> - set disenchant character"..C_RESET)
+            end
+            return
+        end
+        dissCharName = CapitalizeName(arg)
+        SausageRollImportDB.dissCharName = dissCharName
+        Print(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
+        if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
+    else Print("/sr | /sr import | /sr clear | /sr check <n> | /sr bank <n> | /sr diss <n> | /sr winner") end
 end
 
 SLASH_SOFTRESIMPORT1 = "/sri"
@@ -2241,6 +2430,7 @@ SRI:RegisterEvent("BAG_UPDATE")
 SRI:RegisterEvent("CHAT_MSG_SYSTEM")
 SRI:RegisterEvent("TRADE_SHOW")
 SRI:RegisterEvent("TRADE_ACCEPT_UPDATE")
+SRI:RegisterEvent("TRADE_CLOSED")
 
 SRI:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -2250,6 +2440,7 @@ SRI:SetScript("OnEvent", function(self, event, ...)
             if SausageRollImportDB.reservesByName then reservesByName = SausageRollImportDB.reservesByName end
             if SausageRollImportDB.importCount then importCount = SausageRollImportDB.importCount end
             if SausageRollImportDB.bankCharName then bankCharName = SausageRollImportDB.bankCharName end
+            if SausageRollImportDB.dissCharName then dissCharName = SausageRollImportDB.dissCharName end
             if SausageRollImportDB.hardReserves then hardReserves = SausageRollImportDB.hardReserves end
             if SausageRollImportDB.hardReserveCustom then hardReserveCustom = SausageRollImportDB.hardReserveCustom end
             CreateMinimapButton()
@@ -2271,7 +2462,9 @@ SRI:SetScript("OnEvent", function(self, event, ...)
     elseif event == "LOOT_SLOT_CLEARED" then
         ScheduleRefresh(0.2)
     elseif event == "BAG_UPDATE" then
-        ScheduleRefresh()
+        if mainFrame and mainFrame:IsShown() then
+            RefreshMainFrame()
+        end
     elseif event == "CHAT_MSG_SYSTEM" then
         local msg = ...
         if msg then OnSystemMsg(msg) end
@@ -2302,5 +2495,13 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "TRADE_ACCEPT_UPDATE" then
         ScheduleRefresh(0.5)
+    elseif event == "TRADE_CLOSED" then
+        Print(C_YELLOW.."[SR] TRADE_CLOSED fired, scheduling refresh..."..C_RESET)
+        C_Timer.After(1.0, function()
+            if mainFrame then
+                Print(C_GREEN.."[SR] Refreshing GUI after trade."..C_RESET)
+                RefreshMainFrame()
+            end
+        end)
     end
 end)
