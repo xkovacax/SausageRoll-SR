@@ -136,14 +136,30 @@ local function SendRaid(msg, prefix)
     end
 end
 
+-- Throttled message queue for WHISPER (Warmane rate-limits addon messages)
+local srQueue = {}
+local srQueueFrame = CreateFrame("Frame")
+local SR_SEND_INTERVAL = 0.3
+srQueueFrame.elapsed = 0
+srQueueFrame:SetScript("OnUpdate", function(self, elapsed)
+    self.elapsed = self.elapsed + elapsed
+    if self.elapsed < SR_SEND_INTERVAL then return end
+    self.elapsed = 0
+    if #srQueue == 0 then return end
+    local entry = table.remove(srQueue, 1)
+    SendAddonMessage(SR_MSG_PREFIX, entry.msg, "WHISPER", entry.target)
+end)
+
 local function SendSR(msg)
-    local channel = IsInRaid() and "RAID" or
-                    (GetNumPartyMembers() > 0 and "PARTY" or nil)
-    print("[SR DEBUG SEND] channel="..(channel or "NIL").." prefix="..SR_MSG_PREFIX.." msg="..(msg or "nil"))
-    if channel then
-        SendAddonMessage(SR_MSG_PREFIX, msg, channel)
-    else
-        print("[SR DEBUG SEND] NO CHANNEL - message not sent!")
+    if IsInRaid() then
+        SendAddonMessage(SR_MSG_PREFIX, msg, "RAID")
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name then
+                table.insert(srQueue, {msg=msg, target=name})
+            end
+        end
     end
 end
 
