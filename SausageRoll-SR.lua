@@ -131,10 +131,10 @@ local function SendRW(msg)
         if IsRaidLeader() or IsRaidOfficer() then
             SendChatMessage(msg, "RAID_WARNING")
         else
-            SendChatMessage("[SR] "..msg, "RAID")
+            SendChatMessage(msg, "RAID")
         end
     elseif GetNumPartyMembers() > 0 then
-        SendChatMessage("[SR] "..msg, "PARTY")
+        SendChatMessage(msg, "PARTY")
     else
         Print(msg)
     end
@@ -1201,7 +1201,7 @@ local function OnSystemMsg(msg)
 
         if existingCount >= allowedRolls then
             -- Exceeded allowed rolls - whisper warning, don't add
-            SendChatMessage("[SR] "..name.." - your roll was IGNORED! You have "..allowedRolls.."x SR = "..allowedRolls.." roll(s) allowed. You already rolled "..existingCount.."x.", "WHISPER", nil, name)
+            SendChatMessage(name.." - your roll was IGNORED! You have "..allowedRolls.."x SR = "..allowedRolls.." roll(s) allowed. You already rolled "..existingCount.."x.", "WHISPER", nil, name)
             Print(C_RED..name.." exceeded SR roll limit ("..existingCount.."/"..allowedRolls..") - ignored"..C_RESET)
             RefreshRollWindow()
             return
@@ -1212,7 +1212,7 @@ local function OnSystemMsg(msg)
     else
         -- MS: only 1 roll allowed per player
         if existingCount >= 1 then
-            SendChatMessage("[SR] "..name.." - your extra roll was IGNORED! Only 1 roll allowed for MS.", "WHISPER", nil, name)
+            SendChatMessage(name.." - your extra roll was IGNORED! Only 1 roll allowed for MS.", "WHISPER", nil, name)
             Print(C_RED..name.." tried to roll again (MS) - ignored"..C_RESET)
             RefreshRollWindow()
             return
@@ -1690,9 +1690,13 @@ RefreshMainFrame = function()
         rs = " | "..C_ORANGE.."Rolling: "..(activeRoll.link or "?")..
              " ("..activeRoll.mode:upper()..", "..#activeRoll.rolls.." rolls)"..C_RESET
     end
-    mainFrame.statusText:SetText(
-        C_GREEN..importCount..C_WHITE.." SR | "..
-        C_GREEN..pc..C_WHITE.." players"..rs)
+    local srStatus
+    if importCount > 0 then
+        srStatus = C_GREEN..importCount..C_WHITE.." SR | "..C_GREEN..pc..C_WHITE.." players"
+    else
+        srStatus = C_GRAY.."No SR imported"
+    end
+    mainFrame.statusText:SetText(srStatus..rs)
     -- Bank/Diss display
     if mainFrame.bankText then
         local bankStr = bankCharName and (C_CYAN..bankCharName..C_RESET) or (C_RED.."not set"..C_RESET)
@@ -1819,13 +1823,13 @@ local function CreateMainFrame(silent)
     btn3:SetScript("OnClick", function()
         local items = GetVisibleSRItems()
         if #items == 0 then Print(C_YELLOW.."No SR items."..C_RESET); return end
-        SendRaid("=== Soft Reserves ===", "[SR]")
+        SendRW("=== Soft Reserves ===")
         for _, item in ipairs(items) do
             local n = {}
             for _, r in ipairs(item.reservers) do table.insert(n, r.name) end
             local c = ""
             if #n > 1 then c = " (CONTESTED)" end
-            SendRaid(item.link.." -> "..table.concat(n,", ")..c, "[SR]")
+            SendRW(item.link.." -> "..table.concat(n,", ")..c)
         end
     end)
 
@@ -1955,9 +1959,9 @@ local function CreateMainFrame(silent)
         end
         if #grabbed > 0 then
             for _, link in ipairs(grabbed) do
-                SendChatMessage("[SR] Looted: "..link, IsInRaid() and "RAID" or "PARTY")
+                SendChatMessage("Looted: "..link, IsInRaid() and "RAID" or "PARTY")
             end
-            SendChatMessage("[SR] Loot will be distributed during the raid.", IsInRaid() and "RAID" or "PARTY")
+            SendChatMessage("Loot will be distributed during the raid.", IsInRaid() and "RAID" or "PARTY")
             Print(C_GREEN.."Grabbed "..#grabbed.." items to inventory."..C_RESET)
         else
             Print(C_YELLOW.."No lootable items."..C_RESET)
@@ -2326,7 +2330,7 @@ local function HandleSlash(msg)
 
     if cmd=="" then
         displayMode = "bag"
-        if importCount>0 then CreateMainFrame() else CreateImportFrame() end
+        CreateMainFrame()
     elseif cmd=="import" then CreateImportFrame()
     elseif cmd=="show" or cmd=="list" then
         displayMode = "bag"
@@ -2403,19 +2407,17 @@ local lootCheckFrame = CreateFrame("Frame")
 local function OnLootOpened()
     isLootOpen = true
     displayMode = "loot"
-    if importCount > 0 then
-        -- Delay auto-open: loot API needs time to populate slot data
-        local waited = 0
-        lootCheckFrame:SetScript("OnUpdate", function(self, elapsed)
-            waited = waited + elapsed
-            if waited >= 0.35 then
-                self:SetScript("OnUpdate", nil)
-                if isLootOpen and LootHasRelevantItems() then
-                    CreateMainFrame(true)
-                end
+    -- Delay auto-open: loot API needs time to populate slot data
+    local waited = 0
+    lootCheckFrame:SetScript("OnUpdate", function(self, elapsed)
+        waited = waited + elapsed
+        if waited >= 0.35 then
+            self:SetScript("OnUpdate", nil)
+            if isLootOpen and LootHasRelevantItems() then
+                CreateMainFrame(true)
             end
-        end)
-    end
+        end
+    end)
     ScheduleRefresh(0.3)
 end
 
@@ -2447,7 +2449,7 @@ SRI:SetScript("OnEvent", function(self, event, ...)
             if importCount > 0 then
                 Print(C_GREEN.."Loaded! "..C_WHITE..importCount.." reserves. /sr to open."..C_RESET)
             else
-                Print(C_GREEN.."Loaded! "..C_WHITE.."/sr to import."..C_RESET)
+                Print(C_GREEN.."Loaded! "..C_WHITE.."/sr to open."..C_RESET)
             end
         end
     elseif event == "LOOT_OPENED" then
