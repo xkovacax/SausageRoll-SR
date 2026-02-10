@@ -1379,6 +1379,13 @@ local function CreateRow(parent, rowTable, index, mode)
     tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
     row.tradeBtn = tradeBtn
 
+    local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
+    resetBtn:SetSize(BW, 16)
+    resetBtn:SetPoint("BOTTOMLEFT", tradeBtn, "TOPLEFT", 0, 2)
+    resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
+    resetBtn:SetText("Reset")
+    row.resetBtn = resetBtn
+
     local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
     winBtn:SetSize(BW, BH)
     winBtn:SetPoint("RIGHT", tradeBtn, "LEFT", -gap, 0)
@@ -1410,14 +1417,6 @@ local function CreateRow(parent, rowTable, index, mode)
             }
             EasyMenu(menuList, rollModeMenuFrame, self, 0, 0, "MENU")
         end)
-
-        local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
-        resetBtn:SetSize(BW, 16)
-        resetBtn:SetPoint("BOTTOMLEFT", tradeBtn, "TOPLEFT", 0, 2)
-        resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
-        resetBtn:SetText("Reset")
-        row.resetBtn = resetBtn
-        -- OnClick is set in SetupRow (needs item data)
     end
 
     -- Source + Trade timer: left of Roll button
@@ -1543,8 +1542,8 @@ local function SetupRow(row, item, mode)
         row.winBtn:Enable()
     end
 
-    -- Reset button logic for ms rows
-    if mode ~= "sr" and row.resetBtn then
+    -- Reset button logic
+    if row.resetBtn then
         row.resetBtn:SetScript("OnClick", function()
             -- 1) Clear award
             if item.uid then
