@@ -266,7 +266,6 @@ local function OnSyncMessage(prefix, msg, channel, sender)
         clientRoll.finished = true
         clientRoll.countdown = nil
         local myName = UnitName("player") or ""
-        Print(C_YELLOW.."[DEBUG RE] winner='"..tostring(winnerName).."' me='"..myName.."'"..C_RESET)
         if winnerName and winnerName ~= "" and winnerName:lower() == myName:lower() then
             PlaySoundFile("Interface\\AddOns\\SausageRoll-SR\\Sounds\\SausageAnnounce.mp3")
             RaidNotice_AddMessage(RaidWarningFrame, "YOU WON!", ChatTypeInfo["RAID_WARNING"])
@@ -541,7 +540,7 @@ local function TryTradeItem(targetName, itemId, itemLink, itemUid)
     local uid = GetUnitIdByName(targetName)
     if not uid then
         local myName = UnitName("player") or "me"
-        SendRW((itemLink or "Item").." -> "..targetName.." please trade "..myName.."!")
+        SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
         Print(C_YELLOW..targetName.." not found in group. Announced in RW."..C_RESET)
         return
     end
@@ -551,7 +550,7 @@ local function TryTradeItem(targetName, itemId, itemLink, itemUid)
         Print(C_GREEN.."Trading "..(itemLink or "item").." to "..targetName.."..."..C_RESET)
     else
         local myName = UnitName("player") or "me"
-        SendRW((itemLink or "Item").." -> "..targetName.." please trade "..myName.."!")
+        SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
         Print(C_YELLOW..targetName.." out of range. Announced in RW."..C_RESET)
     end
 end
@@ -1214,7 +1213,7 @@ RefreshClientRollWindow = function()
         end
         clientRollFrame.eligibleHeader:ClearAllPoints()
         clientRollFrame.eligibleHeader:SetPoint("TOPLEFT", clientRollFrame.content, "TOPLEFT", 6, -yOff)
-        clientRollFrame.eligibleHeader:SetText(C_ORANGE .. "Eligible:" .. C_RESET)
+        clientRollFrame.eligibleHeader:SetText(C_ORANGE .. "Eligible: [x" .. #clientRoll.eligible .. "]" .. C_RESET)
         clientRollFrame.eligibleHeader:Show()
         yOff = yOff + 14
 
@@ -1227,6 +1226,16 @@ RefreshClientRollWindow = function()
             end
         end
 
+        -- Build name lines, max 3 names per line (client window is narrow)
+        local nameLines = {}
+        for idx = 1, #nameParts, 3 do
+            local chunk = {}
+            for j = idx, math.min(idx + 2, #nameParts) do
+                table.insert(chunk, nameParts[j])
+            end
+            table.insert(nameLines, table.concat(chunk, ", "))
+        end
+
         if not clientRollFrame.eligibleText then
             local et = clientRollFrame.content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             et:SetJustifyH("LEFT")
@@ -1235,10 +1244,12 @@ RefreshClientRollWindow = function()
         end
         clientRollFrame.eligibleText:ClearAllPoints()
         clientRollFrame.eligibleText:SetPoint("TOPLEFT", clientRollFrame.content, "TOPLEFT", 10, -yOff)
-        clientRollFrame.eligibleText:SetPoint("RIGHT", clientRollFrame.content, "RIGHT", -10, 0)
-        clientRollFrame.eligibleText:SetText(table.concat(nameParts, ", "))
+        clientRollFrame.eligibleText:SetPoint("TOPRIGHT", clientRollFrame.content, "TOPRIGHT", -10, -yOff)
+        clientRollFrame.eligibleText:SetText(table.concat(nameLines, "\n"))
         clientRollFrame.eligibleText:Show()
-        yOff = yOff + (clientRollFrame.eligibleText:GetStringHeight() or 14) + 6
+        local lineCount = #nameLines
+        local lineH = 12
+        yOff = yOff + (lineCount * lineH) + 6
     else
         if clientRollFrame.eligibleHeader then clientRollFrame.eligibleHeader:Hide() end
         if clientRollFrame.eligibleText then clientRollFrame.eligibleText:Hide() end
@@ -1421,33 +1432,19 @@ local function StartRoll(uid, itemId, link, mode)
     if mode == "sr" then
         local entries = reserves[itemId]
         if entries then
-            -- Count rolls per player
-            local playerCounts = {}
-            local order = {}
+            local names = {}
             for _, e in ipairs(entries) do
                 local low = e.name:lower()
-                if not playerCounts[low] then
-                    playerCounts[low] = {name=e.name, count=0}
-                    table.insert(order, low)
-                end
-                playerCounts[low].count = playerCounts[low].count + 1
+                local dup = false
+                for _, n in ipairs(names) do if n:lower() == low then dup = true; break end end
+                if not dup then table.insert(names, e.name) end
             end
-            local parts = {}
-            for _, low in ipairs(order) do
-                local pc = playerCounts[low]
-                if pc.count > 1 then
-                    table.insert(parts, pc.name.."("..pc.count.."x)")
-                else
-                    table.insert(parts, pc.name)
-                end
-            end
-            SendRW(link.." - SR ROLL! Eligible: "..table.concat(parts, ", ").." /roll now!")
+            SendRW(link.." SR: "..table.concat(names, ", ").." - /roll!")
         end
     else
-        local label = mode:upper()
-        SendRW(link.." - "..label.." ROLL! Everyone /roll now! (1 roll only)")
+        SendRW(link.." "..mode:upper().." - /roll!")
     end
-    Print(C_GREEN.."Roll started: "..link.." ("..mode:upper().."). Click Winner to end."..C_RESET)
+    Print(C_GREEN.."Roll started: "..link.." ("..mode:upper()..")"..C_RESET)
     CreateRollWindow()
     RefreshRollWindow()
     -- Broadcast to clients
@@ -1469,7 +1466,7 @@ local function AnnounceWinnerFinal()
     if not activeRoll then return end
     local r = activeRoll
     if #r.rolls == 0 then
-        SendRW(r.link.." - No rolls received!")
+        SendRW(r.link.." - No rolls!")
         SendSync("RE", "", 0)
         finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=nil}
         activeRoll = nil
@@ -1494,12 +1491,12 @@ local function AnnounceWinnerFinal()
             end
         end
         if #srRolls == 0 then
-            SendRW(r.link.." - No valid SR rolls!")
+            SendRW(r.link.." - No valid rolls!")
         else
             table.sort(srRolls, function(a,b) return a.roll > b.roll end)
             local w = srRolls[1]
             winnerName = w.name
-            SendRW(r.link.." >>> WON by "..w.name.." (SR roll: "..w.roll..") <<<")
+            SendRW(r.link.." >> "..w.name.." wins ("..w.roll..")")
             table.insert(awardLog, {itemId=r.itemId, winner=w.name, link=r.link})
             uidAwards[r.uid] = {winner=w.name, link=r.link}
         end
@@ -1511,12 +1508,12 @@ local function AnnounceWinnerFinal()
             end
         end
         if #validRolls == 0 then
-            SendRW(r.link.." - No valid MS rolls!")
+            SendRW(r.link.." - No valid rolls!")
         else
             table.sort(validRolls, function(a,b) return a.roll > b.roll end)
             local w = validRolls[1]
             winnerName = w.name
-            SendRW(r.link.." >>> WON by "..w.name.." (MS roll: "..w.roll..") <<<")
+            SendRW(r.link.." >> "..w.name.." wins ("..w.roll..")")
             table.insert(awardLog, {itemId=r.itemId, winner=w.name, link=r.link})
             uidAwards[r.uid] = {winner=w.name, link=r.link}
         end
@@ -1559,7 +1556,7 @@ local function StartCountdown()
         Print(C_YELLOW.."Countdown already running!"..C_RESET)
         return
     end
-    SendRW(activeRoll.link.." - Rolling ends in "..COUNTDOWN_SECS.."...")
+    SendRW(activeRoll.link.." ends in "..COUNTDOWN_SECS.."...")
     countdownTimer = {remaining=COUNTDOWN_SECS, elapsed=0}
 end
 
@@ -1573,7 +1570,7 @@ local function UpdateCountdown(elapsed)
             SendRW(countdownTimer.remaining.."...")
             SendSync("RC", countdownTimer.remaining)
         elseif countdownTimer.remaining == 0 then
-            SendRW("STOP! Evaluating rolls...")
+            SendRW("STOP!")
             SendSync("RC", 0)
             countdownTimer.remaining = -1
         else
@@ -1866,13 +1863,14 @@ local function CreateRow(parent, rowTable, index, mode)
 
     -- Info line (SR names / MS Roll) — hoverable for full list
     local infoBtn = CreateFrame("Button", rn.."Info", row)
-    infoBtn:SetPoint("BOTTOMLEFT", iconBtn,"BOTTOMRIGHT",6,2)
+    infoBtn:SetPoint("TOPLEFT", iconBtn,"TOPRIGHT",6,-16)
     infoBtn:SetPoint("RIGHT", srcText, "LEFT", -8, 0)
-    infoBtn:SetHeight(12)
     local infoText = infoBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-    infoText:SetAllPoints()
+    infoText:SetPoint("TOPLEFT")
+    infoText:SetPoint("TOPRIGHT")
     infoText:SetJustifyH("LEFT")
     infoText:SetFont(infoText:GetFont(), 9)
+    infoText:SetNonSpaceWrap(true)
     row.infoText = infoText
     row.infoBtn = infoBtn
     row.fullInfoText = "" -- store full text for tooltip
@@ -1922,9 +1920,24 @@ local function SetupRow(row, item, mode)
             table.insert(colorNames, color..r.name..C_RESET)
         end
         row.fullInfoText = table.concat(plainNames, ", ")
-        local info = "SR: "..table.concat(colorNames,", ")
-        if #item.reservers > 1 then info = info..C_ORANGE.." [x"..#item.reservers.."]"..C_RESET end
+        local header = "SR: "..C_ORANGE.."[x"..#item.reservers.."]"..C_RESET
+        -- Build name lines, max 4 names per line
+        local nameLines = {}
+        for idx = 1, #colorNames, 4 do
+            local chunk = {}
+            for j = idx, math.min(idx + 3, #colorNames) do
+                table.insert(chunk, colorNames[j])
+            end
+            table.insert(nameLines, table.concat(chunk, ", "))
+        end
+        local info = header.."\n"..table.concat(nameLines, "\n")
         row.infoText:SetText(info)
+        local lineCount = 1 + #nameLines  -- 1 header + name lines
+        local lineH = 12
+        local textHeight = lineCount * lineH
+        row.infoBtn:SetHeight(textHeight)
+        row.dynamicHeight = math.max(ROW_HEIGHT, 20 + textHeight + 4)
+        row:SetHeight(row.dynamicHeight)
     else
         local rollLabel = (row.rollMode or "ms"):upper()
         row.infoText:SetText(C_YELLOW..rollLabel.." Roll"..C_RESET)
@@ -1961,12 +1974,16 @@ local function SetupRow(row, item, mode)
         end
     end
 
-    -- Dim buttons for AWARDED items (already handled)
-    if item.state == "AWARDED" then
+    -- Dim buttons for AWARDED items or items with active/finished roll
+    local hasRoll = (activeRoll and activeRoll.uid == item.uid) or (finishedRoll and finishedRoll.uid == item.uid)
+    if item.state == "AWARDED" or hasRoll then
         row.rollBtn:Disable()
-        row.winBtn:Disable()
     else
         row.rollBtn:Enable()
+    end
+    if item.state == "AWARDED" then
+        row.winBtn:Disable()
+    else
         row.winBtn:Enable()
     end
 
@@ -1994,19 +2011,9 @@ local function SetupRow(row, item, mode)
 
     -- Roll = Announce + Start Roll combined
     row.rollBtn:SetScript("OnClick", function()
-        if mode == "sr" and item.reservers then
-            local n = {}
-            for _, r in ipairs(item.reservers) do table.insert(n, r.name) end
-            local c = ""
-            if #n > 1 then c = " (CONTESTED - "..#n.." SR)" end
-            SendRW(item.link.." reserved by: "..table.concat(n,", ")..c)
-        else
-            local rollMode = row.rollMode or "ms"
-            local label = rollMode:upper()
-            SendRW(item.link.." - Open for "..label.." ROLL")
-        end
         local effectiveMode = (mode == "sr") and mode or (row.rollMode or "ms")
         StartRoll(item.uid, item.itemId, item.link, effectiveMode)
+        row.rollBtn:Disable()
     end)
 
     row.winBtn:SetScript("OnClick", function()
@@ -2082,7 +2089,7 @@ RefreshMainFrame = function()
         row:SetPoint("TOPLEFT", mainFrame.content,"TOPLEFT",0,-yOff)
         row:SetPoint("RIGHT", mainFrame.content,"RIGHT",0,0)
         SetupRow(row, item, "sr")
-        yOff = yOff + ROW_HEIGHT
+        yOff = yOff + (row.dynamicHeight or ROW_HEIGHT)
     end
 
     yOff = yOff + 10
@@ -2255,9 +2262,7 @@ local function CreateMainFrame(silent)
         for _, item in ipairs(items) do
             local n = {}
             for _, r in ipairs(item.reservers) do table.insert(n, r.name) end
-            local c = ""
-            if #n > 1 then c = " (CONTESTED)" end
-            SendRW(item.link.." -> "..table.concat(n,", ")..c)
+            SendRW(item.link.." -> "..table.concat(n, ", "))
         end
     end)
 
@@ -2386,10 +2391,18 @@ local function CreateMainFrame(silent)
             end
         end
         if #grabbed > 0 then
-            for _, link in ipairs(grabbed) do
-                SendChatMessage("Looted: "..link, IsInRaid() and "RAID" or "PARTY")
+            local channel = IsInRaid() and "RAID" or "PARTY"
+            local msg = "Looted: "..grabbed[1]
+            for i = 2, #grabbed do
+                local appended = msg..", "..grabbed[i]
+                if #appended > 250 then
+                    SendChatMessage(msg, channel)
+                    msg = "Looted: "..grabbed[i]
+                else
+                    msg = appended
+                end
             end
-            SendChatMessage("Loot will be distributed during the raid.", IsInRaid() and "RAID" or "PARTY")
+            SendChatMessage(msg, channel)
             Print(C_GREEN.."Grabbed "..#grabbed.." items to inventory."..C_RESET)
         else
             Print(C_YELLOW.."No lootable items."..C_RESET)
