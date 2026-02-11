@@ -4,6 +4,7 @@
 -- RW announce, roll tracking, winner eval, reimport
 ----------------------------------------------------------------------
 local ADDON_NAME = "SausageRoll-SR"
+local SR_VERSION = "1.0.0"
 local SRI = CreateFrame("Frame", "SoftResImportFrame")
 
 local C_GREEN  = "|cff00ff00"
@@ -2176,7 +2177,7 @@ local function CreateMainFrame(silent)
 
     local t = f:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
     t:SetPoint("TOP",0,-12)
-    t:SetText(C_GREEN.."Sausage Roll"..C_WHITE.." - SR Loot Tracker"..C_RESET)
+    t:SetText(C_GREEN.."Sausage Roll"..C_WHITE.." - SR Loot Tracker "..C_GRAY.."v"..SR_VERSION..C_RESET)
 
     f.statusText = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
     f.statusText:SetPoint("TOP",0,-30)

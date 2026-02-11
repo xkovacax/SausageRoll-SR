@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Update versions in project
+        run: |
+          sed -i "s/^## Version: .*/## Version: ${{ steps.version.outputs.version }}/" SausageRoll-SR.toc
+          sed -i 's/^local SR_VERSION = .*/local SR_VERSION = "${{ steps.version.outputs.version }}"/' SausageRoll-SR.lua
+
+      - name: Commit version update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+            git push origin HEAD:master
+          fi
+
+      - name: Package addon zip
+        run: |
+          mkdir -p SausageRoll-SR
+          cp -r SausageRoll-SR.toc SausageRoll-SR.lua Sounds/ Textures/ SausageRoll-SR/
+          zip -r SausageRoll-SR.zip SausageRoll-SR/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SausageRoll-SR ${{ github.ref_name }}
+          files: SausageRoll-SR.zip
+          generate_release_notes: true
