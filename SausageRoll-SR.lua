@@ -4,7 +4,7 @@
 -- RW announce, roll tracking, winner eval, reimport
 ----------------------------------------------------------------------
 local ADDON_NAME = "SausageRoll-SR"
-local SR_VERSION = "1.0.0"
+local SR_VERSION = "1.1.0"
 local SRI = CreateFrame("Frame", "SoftResImportFrame")
 
 local C_GREEN  = "|cff00ff00"
