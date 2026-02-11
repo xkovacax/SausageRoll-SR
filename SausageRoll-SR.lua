@@ -265,7 +265,9 @@ local function OnSyncMessage(prefix, msg, channel, sender)
         end
         clientRoll.finished = true
         clientRoll.countdown = nil
-        if winnerName and winnerName ~= "" and winnerName:lower() == UnitName("player"):lower() then
+        local myName = UnitName("player") or ""
+        Print(C_YELLOW.."[DEBUG RE] winner='"..tostring(winnerName).."' me='"..myName.."'"..C_RESET)
+        if winnerName and winnerName ~= "" and winnerName:lower() == myName:lower() then
             PlaySoundFile("Interface\\AddOns\\SausageRoll-SR\\Sounds\\SausageAnnounce.mp3")
             RaidNotice_AddMessage(RaidWarningFrame, "YOU WON!", ChatTypeInfo["RAID_WARNING"])
         end
