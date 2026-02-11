@@ -265,7 +265,11 @@ local function OnSyncMessage(prefix, msg, channel, sender)
         end
         clientRoll.finished = true
         clientRoll.countdown = nil
-        PlaySound("RaidWarning")
+        if winnerName and winnerName ~= "" and winnerName:lower() == UnitName("player"):lower() then
+            PlaySoundFile("Sound\\Interface\\LevelUp.wav")
+        else
+            PlaySound("RaidWarning")
+        end
         clientAutoHideTimer = 8
         RefreshClientRollWindow()
 
