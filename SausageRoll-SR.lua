@@ -168,7 +168,7 @@ local function SendSync(msgType, ...)
     for i = 1, select("#", ...) do
         parts[#parts + 1] = tostring(select(i, ...))
     end
-    local payload = table.concat(parts, "|")
+    local payload = table.concat(parts, ":")
     local channel
     if IsInRaid() then
         channel = "RAID"
@@ -202,7 +202,7 @@ local function OnSyncMessage(prefix, msg, channel, sender)
     if prefix ~= SYNC_PREFIX then return end
     if sender == UnitName("player") then return end
 
-    local parts = {strsplit("|", msg)}
+    local parts = {strsplit(":", msg)}
     local msgType = parts[1]
 
     if msgType == "RS" then
@@ -2925,10 +2925,16 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         ScheduleRefresh(0.5)
     elseif event == "TRADE_CLOSED" then
         Print(C_YELLOW.."[SR] TRADE_CLOSED fired, scheduling refresh..."..C_RESET)
-        C_Timer.After(1.0, function()
-            if mainFrame then
-                Print(C_GREEN.."[SR] Refreshing GUI after trade."..C_RESET)
-                RefreshMainFrame()
+        local tradeCloseFrame = CreateFrame("Frame")
+        local tradeCloseWait = 0
+        tradeCloseFrame:SetScript("OnUpdate", function(df, el)
+            tradeCloseWait = tradeCloseWait + el
+            if tradeCloseWait >= 1.0 then
+                df:SetScript("OnUpdate", nil)
+                if mainFrame then
+                    Print(C_GREEN.."[SR] Refreshing GUI after trade."..C_RESET)
+                    RefreshMainFrame()
+                end
             end
         end)
     end
