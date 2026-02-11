@@ -1836,9 +1836,9 @@ local function CreateRow(parent, rowTable, index, mode)
 
         modeBtn:SetScript("OnClick", function(self)
             local menuList = {
-                {text = "MS", checked = (row.rollMode == "ms"), func = function() row.rollMode = "ms"; modeBtn:SetText("MS") end},
-                {text = "OS", checked = (row.rollMode == "os"), func = function() row.rollMode = "os"; modeBtn:SetText("OS") end},
-                {text = "FREELOOT", checked = (row.rollMode == "freeloot"), func = function() row.rollMode = "freeloot"; modeBtn:SetText("FREELOOT") end},
+                {text = "MS", checked = (row.rollMode == "ms"), func = function() row.rollMode = "ms"; modeBtn:SetText("MS"); row.infoText:SetText(C_YELLOW.."MS Roll"..C_RESET) end},
+                {text = "OS", checked = (row.rollMode == "os"), func = function() row.rollMode = "os"; modeBtn:SetText("OS"); row.infoText:SetText(C_YELLOW.."OS Roll"..C_RESET) end},
+                {text = "FREELOOT", checked = (row.rollMode == "freeloot"), func = function() row.rollMode = "freeloot"; modeBtn:SetText("FREELOOT"); row.infoText:SetText(C_YELLOW.."FREELOOT Roll"..C_RESET) end},
             }
             EasyMenu(menuList, rollModeMenuFrame, self, 0, 0, "MENU")
         end)
@@ -1985,6 +1985,11 @@ local function SetupRow(row, item, mode)
         row.winBtn:Disable()
     else
         row.winBtn:Enable()
+    end
+    if item.awardWinner then
+        row.tradeBtn:Enable()
+    else
+        row.tradeBtn:Disable()
     end
 
     -- Reset button logic
