@@ -111,8 +111,14 @@ end
 ----------------------------------------------------------------------
 -- Utility
 ----------------------------------------------------------------------
+local SR_DEBUG = false
+
 local function Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX..": "..msg)
+end
+
+local function DPrint(msg)
+    if SR_DEBUG then DEFAULT_CHAT_FRAME:AddMessage(PREFIX..": "..msg) end
 end
 
 local function StripQuotes(s)
@@ -146,7 +152,7 @@ local function SendRW(msg)
     elseif GetNumPartyMembers() > 0 then
         SendChatMessage(msg, "PARTY")
     else
-        Print(msg)
+        DPrint(msg)
     end
 end
 
@@ -157,7 +163,7 @@ local function SendRaid(msg, prefix)
     elseif GetNumPartyMembers() > 0 then
         SendChatMessage(prefix.." "..msg, "PARTY")
     else
-        Print(msg)
+        DPrint(msg)
     end
 end
 
@@ -486,7 +492,7 @@ end
 
 local function TryTradeItem(targetName, itemId, itemLink, itemUid)
     if not targetName or targetName == "" then
-        Print(C_RED.."No target name!"..C_RESET)
+        DPrint(C_RED.."No target name!"..C_RESET)
         return
     end
 
@@ -502,12 +508,12 @@ local function TryTradeItem(targetName, itemId, itemLink, itemUid)
                     if not cname then break end
                     if cname:lower() == targetName:lower() then
                         GiveMasterLoot(lootIdx, ci)
-                        Print(C_GREEN.."Master looted "..(itemLink or "item").." to "..targetName..C_RESET)
+                        DPrint(C_GREEN.."Master looted "..(itemLink or "item").." to "..targetName..C_RESET)
                         ScheduleRefresh(0.5)
                         return
                     end
                 end
-                Print(C_RED..targetName.." not in master loot candidates!"..C_RESET)
+                DPrint(C_RED..targetName.." not in master loot candidates!"..C_RESET)
                 return
             end
         end
@@ -534,7 +540,7 @@ local function TryTradeItem(targetName, itemId, itemLink, itemUid)
         bag, slot = FindBagSlot(itemId)
     end
     if not bag then
-        Print(C_RED.."Item not in loot or bags!"..C_RESET)
+        DPrint(C_RED.."Item not in loot or bags!"..C_RESET)
         return
     end
 
@@ -542,17 +548,17 @@ local function TryTradeItem(targetName, itemId, itemLink, itemUid)
     if not uid then
         local myName = UnitName("player") or "me"
         SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
-        Print(C_YELLOW..targetName.." not found in group. Announced in RW."..C_RESET)
+        DPrint(C_YELLOW..targetName.." not found in group. Announced in RW."..C_RESET)
         return
     end
     if CheckInteractDistance(uid, 2) then
         pendingTrade = {bag=bag, slot=slot, itemId=itemId}
         InitiateTrade(uid)
-        Print(C_GREEN.."Trading "..(itemLink or "item").." to "..targetName.."..."..C_RESET)
+        DPrint(C_GREEN.."Trading "..(itemLink or "item").." to "..targetName.."..."..C_RESET)
     else
         local myName = UnitName("player") or "me"
         SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
-        Print(C_YELLOW..targetName.." out of range. Announced in RW."..C_RESET)
+        DPrint(C_YELLOW..targetName.." out of range. Announced in RW."..C_RESET)
     end
 end
 
@@ -1445,7 +1451,7 @@ local function StartRoll(uid, itemId, link, mode)
     else
         SendRW(link.." "..mode:upper().." - /roll!")
     end
-    Print(C_GREEN.."Roll started: "..link.." ("..mode:upper()..")"..C_RESET)
+    DPrint(C_GREEN.."Roll started: "..link.." ("..mode:upper()..")"..C_RESET)
     CreateRollWindow()
     RefreshRollWindow()
     -- Broadcast to clients
@@ -1520,11 +1526,11 @@ local function AnnounceWinnerFinal()
         end
     end
 
-    Print(C_GRAY.."All rolls:"..C_RESET)
+    DPrint(C_GRAY.."All rolls:"..C_RESET)
     table.sort(r.rolls, function(a,b) return a.roll > b.roll end)
     for _, roll in ipairs(r.rolls) do
         local exTag = roll.excluded and (" "..C_RED.."[EXCLUDED]"..C_RESET) or ""
-        Print("  "..C_CYAN..roll.name..C_WHITE..": "..roll.roll..exTag..C_RESET)
+        DPrint("  "..C_CYAN..roll.name..C_WHITE..": "..roll.roll..exTag..C_RESET)
     end
 
     -- Broadcast winner to clients
@@ -1550,11 +1556,11 @@ end
 
 local function StartCountdown()
     if not activeRoll then
-        Print(C_RED.."No active roll!"..C_RESET)
+        DPrint(C_RED.."No active roll!"..C_RESET)
         return
     end
     if countdownTimer then
-        Print(C_YELLOW.."Countdown already running!"..C_RESET)
+        DPrint(C_YELLOW.."Countdown already running!"..C_RESET)
         return
     end
     SendRW(activeRoll.link.." ends in "..COUNTDOWN_SECS.."...")
@@ -1616,7 +1622,7 @@ local function OnSystemMsg(msg)
         if existingCount >= allowedRolls then
             -- Exceeded allowed rolls - whisper warning, don't add
             SendChatMessage(name.." - your roll was IGNORED! You have "..allowedRolls.."x SR = "..allowedRolls.." roll(s) allowed. You already rolled "..existingCount.."x.", "WHISPER", nil, name)
-            Print(C_RED..name.." exceeded SR roll limit ("..existingCount.."/"..allowedRolls..") - ignored"..C_RESET)
+            DPrint(C_RED..name.." exceeded SR roll limit ("..existingCount.."/"..allowedRolls..") - ignored"..C_RESET)
             RefreshRollWindow()
             return
         end
@@ -1628,7 +1634,7 @@ local function OnSystemMsg(msg)
         -- MS: only 1 roll allowed per player
         if existingCount >= 1 then
             SendChatMessage(name.." - your extra roll was IGNORED! Only 1 roll allowed for MS.", "WHISPER", nil, name)
-            Print(C_RED..name.." tried to roll again (MS) - ignored"..C_RESET)
+            DPrint(C_RED..name.." tried to roll again (MS) - ignored"..C_RESET)
             RefreshRollWindow()
             return
         end
@@ -2024,11 +2030,11 @@ local function SetupRow(row, item, mode)
 
     row.winBtn:SetScript("OnClick", function()
         if not activeRoll then
-            Print(C_RED.."No active roll! Click Roll first."..C_RESET)
+            DPrint(C_RED.."No active roll! Click Roll first."..C_RESET)
             return
         end
         if activeRoll.uid ~= item.uid then
-            Print(C_RED.."Active roll is for: "..(activeRoll.link or "?")..C_RESET)
+            DPrint(C_RED.."Active roll is for: "..(activeRoll.link or "?")..C_RESET)
             return
         end
         StartCountdown()
@@ -2036,7 +2042,7 @@ local function SetupRow(row, item, mode)
 
     row.tradeBtn:SetScript("OnClick", function()
         if not item.awardWinner then
-            Print(C_RED.."No winner for this item! Roll first."..C_RESET)
+            DPrint(C_RED.."No winner for this item! Roll first."..C_RESET)
             return
         end
         TryTradeItem(item.awardWinner, item.itemId, item.link, item.uid)
@@ -2045,7 +2051,7 @@ local function SetupRow(row, item, mode)
 
     row.bankBtn:SetScript("OnClick", function()
         if not bankCharName then
-            Print(C_RED.."Set bank char: /sr bank <name>"..C_RESET)
+            DPrint(C_RED.."Set bank char: /sr bank <name>"..C_RESET)
             return
         end
         TryTradeItem(bankCharName, item.itemId, item.link, item.uid)
@@ -2054,7 +2060,7 @@ local function SetupRow(row, item, mode)
 
     row.dissBtn:SetScript("OnClick", function()
         if not dissCharName then
-            Print(C_RED.."Set diss char: /sr diss <name>"..C_RESET)
+            DPrint(C_RED.."Set diss char: /sr diss <name>"..C_RESET)
             return
         end
         TryTradeItem(dissCharName, item.itemId, item.link, item.uid)
@@ -2149,7 +2155,7 @@ end
 local function CreateMainFrame(silent)
     if not IsMasterLooter() then
         if not silent then
-            Print(C_RED .. "You must be Master Looter to open this window." .. C_RESET)
+            DPrint(C_RED .. "You must be Master Looter to open this window." .. C_RESET)
         end
         return
     end
@@ -2263,7 +2269,7 @@ local function CreateMainFrame(silent)
     btn3:SetText("Announce All SR")
     btn3:SetScript("OnClick", function()
         local items = GetVisibleSRItems()
-        if #items == 0 then Print(C_YELLOW.."No SR items."..C_RESET); return end
+        if #items == 0 then DPrint(C_YELLOW.."No SR items."..C_RESET); return end
         SendRW("=== Soft Reserves ===")
         for _, item in ipairs(items) do
             local n = {}
@@ -2283,7 +2289,7 @@ local function CreateMainFrame(silent)
     btnHRAnn:SetSize(110,22); btnHRAnn:SetPoint("BOTTOMLEFT",110,12)
     btnHRAnn:SetText("Announce All HR")
     btnHRAnn:SetScript("OnClick", function()
-        if #hardReserves == 0 and #hardReserveCustom == 0 then Print(C_YELLOW.."No HR items."..C_RESET); return end
+        if #hardReserves == 0 and #hardReserveCustom == 0 then DPrint(C_YELLOW.."No HR items."..C_RESET); return end
         SendRaid("=== Hard Reserves ===")
         for _, hr in ipairs(hardReserves) do
             local _, link = GetItemInfo(hr.itemId)
@@ -2312,7 +2318,7 @@ local function CreateMainFrame(silent)
                 func = function()
                     bankCharName = name
                     SausageRollImportDB.bankCharName = bankCharName
-                    Print(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
+                    DPrint(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
                     RefreshMainFrame()
                 end,
             })
@@ -2322,7 +2328,7 @@ local function CreateMainFrame(silent)
             func = function()
                 bankCharName = nil
                 SausageRollImportDB.bankCharName = nil
-                Print(C_YELLOW.."Bank char cleared."..C_RESET)
+                DPrint(C_YELLOW.."Bank char cleared."..C_RESET)
                 RefreshMainFrame()
             end,
         })
@@ -2343,7 +2349,7 @@ local function CreateMainFrame(silent)
                 func = function()
                     dissCharName = name
                     SausageRollImportDB.dissCharName = dissCharName
-                    Print(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
+                    DPrint(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
                     RefreshMainFrame()
                 end,
             })
@@ -2353,7 +2359,7 @@ local function CreateMainFrame(silent)
             func = function()
                 dissCharName = nil
                 SausageRollImportDB.dissCharName = nil
-                Print(C_YELLOW.."Diss char cleared."..C_RESET)
+                DPrint(C_YELLOW.."Diss char cleared."..C_RESET)
                 RefreshMainFrame()
             end,
         })
@@ -2366,11 +2372,11 @@ local function CreateMainFrame(silent)
     btnGrab:SetText("Grab All Loot")
     btnGrab:SetScript("OnClick", function()
         if not isLootOpen then
-            Print(C_RED.."No loot window open!"..C_RESET)
+            DPrint(C_RED.."No loot window open!"..C_RESET)
             return
         end
         if not IsMasterLooter() then
-            Print(C_RED.."You are not Master Looter!"..C_RESET)
+            DPrint(C_RED.."You are not Master Looter!"..C_RESET)
             return
         end
         local myName = UnitName("player")
@@ -2385,7 +2391,7 @@ local function CreateMainFrame(silent)
             end
         end
         if not myCandIdx then
-            Print(C_RED.."Can't find self in loot candidates!"..C_RESET)
+            DPrint(C_RED.."Can't find self in loot candidates!"..C_RESET)
             return
         end
         local grabbed = {}
@@ -2409,9 +2415,9 @@ local function CreateMainFrame(silent)
                 end
             end
             SendChatMessage(msg, channel)
-            Print(C_GREEN.."Grabbed "..#grabbed.." items to inventory."..C_RESET)
+            DPrint(C_GREEN.."Grabbed "..#grabbed.." items to inventory."..C_RESET)
         else
-            Print(C_YELLOW.."No lootable items."..C_RESET)
+            DPrint(C_YELLOW.."No lootable items."..C_RESET)
         end
     end)
 
@@ -2516,11 +2522,11 @@ CreateImportFrame = function()
     b1:SetText("Import")
     b1:SetScript("OnClick", function()
         local text = eb:GetText()
-        if not text or text == "" then Print(C_RED.."Paste CSV first!"..C_RESET); return end
+        if not text or text == "" then DPrint(C_RED.."Paste CSV first!"..C_RESET); return end
         local count = ParseCSV(text)
         local pc = 0
         for _ in pairs(reservesByName) do pc = pc + 1 end
-        Print(C_GREEN..count..C_WHITE.." reserves imported ("..C_GREEN..pc..C_WHITE.." players)"..C_RESET)
+        DPrint(C_GREEN..count..C_WHITE.." reserves imported ("..C_GREEN..pc..C_WHITE.." players)"..C_RESET)
         eb:ClearFocus()
         UpdateStatus()
         f:Hide()
@@ -2532,7 +2538,7 @@ CreateImportFrame = function()
     b2:SetText("Clear All SR")
     b2:SetScript("OnClick", function()
         ClearAllData(); eb:SetText(""); UpdateStatus()
-        Print(C_YELLOW.."All reserves cleared."..C_RESET)
+        DPrint(C_YELLOW.."All reserves cleared."..C_RESET)
         if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
     end)
 
@@ -2624,15 +2630,15 @@ CreateHRImportFrame = function()
     b1:SetText("Import")
     b1:SetScript("OnClick", function()
         local text = eb:GetText()
-        if not text or text == "" then Print(C_RED.."Paste HR CSV first!"..C_RESET); return end
+        if not text or text == "" then DPrint(C_RED.."Paste HR CSV first!"..C_RESET); return end
         ParseHRCSV(text)
         local parts = {}
         if #hardReserves > 0 then table.insert(parts, C_GREEN..#hardReserves..C_WHITE.." HR items") end
         if #hardReserveCustom > 0 then table.insert(parts, C_GREEN..#hardReserveCustom..C_WHITE.." custom lines") end
         if #parts > 0 then
-            Print(table.concat(parts, " + ").." imported"..C_RESET)
+            DPrint(table.concat(parts, " + ").." imported"..C_RESET)
         else
-            Print(C_YELLOW.."No HR data found in text."..C_RESET)
+            DPrint(C_YELLOW.."No HR data found in text."..C_RESET)
         end
         eb:ClearFocus()
         UpdateStatus()
@@ -2649,7 +2655,7 @@ CreateHRImportFrame = function()
         SausageRollImportDB.hardReserveCustom = hardReserveCustom
         SausageRollImportDB.lastHRText = nil
         eb:SetText(""); UpdateStatus()
-        Print(C_YELLOW.."All HR items cleared."..C_RESET)
+        DPrint(C_YELLOW.."All HR items cleared."..C_RESET)
     end)
 
     local b3 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
@@ -2783,52 +2789,52 @@ local function HandleSlash(msg)
         displayMode = "bag"
         CreateMainFrame()
     elseif cmd=="check" then
-        if arg=="" then Print(C_RED.."/sr check <name>"..C_RESET); return end
+        if arg=="" then DPrint(C_RED.."/sr check <name>"..C_RESET); return end
         local name = CapitalizeName(arg)
         local items = reservesByName[name]
         if items and #items>0 then
-            Print(C_CYAN..name..C_WHITE.." reserved:"..C_RESET)
+            DPrint(C_CYAN..name..C_WHITE.." reserved:"..C_RESET)
             for _,e in ipairs(items) do
                 local _,ilink=GetItemInfo(e.itemId)
-                Print("  "..(ilink or ("["..e.itemName.."]"))..C_GRAY.." ("..e.from..")"..C_RESET)
+                DPrint("  "..(ilink or ("["..e.itemName.."]"))..C_GRAY.." ("..e.from..")"..C_RESET)
             end
-        else Print(C_YELLOW..name.." has no SR."..C_RESET) end
+        else DPrint(C_YELLOW..name.." has no SR."..C_RESET) end
     elseif cmd=="clear" then
         ClearAllData()
-        Print(C_YELLOW.."Cleared."..C_RESET)
+        DPrint(C_YELLOW.."Cleared."..C_RESET)
         if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
     elseif cmd=="count" then
         local pc=0 for _ in pairs(reservesByName) do pc=pc+1 end
         local ic=0 for _ in pairs(reserves) do ic=ic+1 end
-        Print(C_GREEN..importCount..C_WHITE.." SR | "..C_GREEN..pc..C_WHITE.." players | "..C_GREEN..ic..C_WHITE.." items"..C_RESET)
+        DPrint(C_GREEN..importCount..C_WHITE.." SR | "..C_GREEN..pc..C_WHITE.." players | "..C_GREEN..ic..C_WHITE.." items"..C_RESET)
     elseif cmd=="winner" then StartCountdown()
     elseif cmd=="bank" then
         if arg=="" then
             if bankCharName then
-                Print(C_WHITE.."Bank char: "..C_CYAN..bankCharName..C_RESET)
+                DPrint(C_WHITE.."Bank char: "..C_CYAN..bankCharName..C_RESET)
             else
-                Print(C_RED.."/sr bank <n> - set bank character"..C_RESET)
+                DPrint(C_RED.."/sr bank <n> - set bank character"..C_RESET)
             end
             return
         end
         bankCharName = CapitalizeName(arg)
         SausageRollImportDB.bankCharName = bankCharName
-        Print(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
+        DPrint(C_GREEN.."Bank set to: "..C_CYAN..bankCharName..C_RESET)
         if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
     elseif cmd=="diss" then
         if arg=="" then
             if dissCharName then
-                Print(C_WHITE.."Diss char: "..C_CYAN..dissCharName..C_RESET)
+                DPrint(C_WHITE.."Diss char: "..C_CYAN..dissCharName..C_RESET)
             else
-                Print(C_RED.."/sr diss <n> - set disenchant character"..C_RESET)
+                DPrint(C_RED.."/sr diss <n> - set disenchant character"..C_RESET)
             end
             return
         end
         dissCharName = CapitalizeName(arg)
         SausageRollImportDB.dissCharName = dissCharName
-        Print(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
+        DPrint(C_GREEN.."Diss set to: "..C_CYAN..dissCharName..C_RESET)
         if mainFrame and mainFrame:IsShown() then RefreshMainFrame() end
-    else Print("/sr | /sr import | /sr clear | /sr check <n> | /sr bank <n> | /sr diss <n> | /sr winner") end
+    else DPrint("/sr | /sr import | /sr clear | /sr check <n> | /sr bank <n> | /sr diss <n> | /sr winner") end
 end
 
 SLASH_SOFTRESIMPORT1 = "/sri"
@@ -2882,6 +2888,7 @@ SRI:RegisterEvent("TRADE_ACCEPT_UPDATE")
 SRI:RegisterEvent("TRADE_CLOSED")
 SRI:RegisterEvent("CHAT_MSG_ADDON")
 
+local tradeCloseFrame
 SRI:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...
@@ -2895,9 +2902,9 @@ SRI:SetScript("OnEvent", function(self, event, ...)
             if SausageRollImportDB.hardReserveCustom then hardReserveCustom = SausageRollImportDB.hardReserveCustom end
             CreateMinimapButton()
             if importCount > 0 then
-                Print(C_GREEN.."Loaded! "..C_WHITE..importCount.." reserves. /sr to open."..C_RESET)
+                DPrint(C_GREEN.."Loaded! "..C_WHITE..importCount.." reserves. /sr to open."..C_RESET)
             else
-                Print(C_GREEN.."Loaded! "..C_WHITE.."/sr to open."..C_RESET)
+                DPrint(C_GREEN.."Loaded! "..C_WHITE.."/sr to open."..C_RESET)
             end
         end
     elseif event == "LOOT_OPENED" then
@@ -2938,9 +2945,9 @@ SRI:SetScript("OnEvent", function(self, event, ...)
                         ClearCursor()
                         PickupContainerItem(pt.bag, pt.slot)
                         ClickTradeButton(1)
-                        Print(C_GREEN.."Item placed in trade. Confirm manually."..C_RESET)
+                        DPrint(C_GREEN.."Item placed in trade. Confirm manually."..C_RESET)
                     else
-                        Print(C_RED.."Item moved from bag slot!"..C_RESET)
+                        DPrint(C_RED.."Item moved from bag slot!"..C_RESET)
                     end
                 end
             end)
@@ -2948,15 +2955,17 @@ SRI:SetScript("OnEvent", function(self, event, ...)
     elseif event == "TRADE_ACCEPT_UPDATE" then
         ScheduleRefresh(0.5)
     elseif event == "TRADE_CLOSED" then
-        Print(C_YELLOW.."[SR] TRADE_CLOSED fired, scheduling refresh..."..C_RESET)
-        local tradeCloseFrame = CreateFrame("Frame")
+        if tradeCloseFrame then return end
+        DPrint(C_YELLOW.."[SR] TRADE_CLOSED fired, scheduling refresh..."..C_RESET)
+        tradeCloseFrame = CreateFrame("Frame")
         local tradeCloseWait = 0
         tradeCloseFrame:SetScript("OnUpdate", function(df, el)
             tradeCloseWait = tradeCloseWait + el
             if tradeCloseWait >= 1.0 then
                 df:SetScript("OnUpdate", nil)
+                tradeCloseFrame = nil
                 if mainFrame then
-                    Print(C_GREEN.."[SR] Refreshing GUI after trade."..C_RESET)
+                    DPrint(C_GREEN.."[SR] Refreshing GUI after trade."..C_RESET)
                     RefreshMainFrame()
                 end
             end
