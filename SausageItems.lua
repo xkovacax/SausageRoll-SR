@@ -80,6 +80,19 @@ function SR.EnrichWithUid(item)
         local slotKey = "bag:"..item.bag..":"..item.slot
         item.uid = SR.GetBagItemUid(slotKey, item.itemId)
     end
+    -- Claim persisted state if not already bound to this UID
+    if not SR.uidAwards[item.uid] then
+        local claimed = SR.ClaimAward(item.itemId)
+        if claimed then
+            SR.uidAwards[item.uid] = claimed
+        end
+    end
+    if not SR.uidAwards[item.uid] and not SR.uidRolled[item.uid] then
+        if SR.ClaimRolled(item.itemId) then
+            SR.uidRolled[item.uid] = true
+        end
+    end
+
     local award = SR.uidAwards[item.uid]
     item.awardWinner = award and award.winner or nil
     if SR.activeRoll and SR.activeRoll.uid == item.uid then

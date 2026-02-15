@@ -59,11 +59,18 @@ local function CreateRow(parent, rowTable, index, mode)
     row.dissBtn = dissBtn
 
     local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
-    tradeBtn:SetSize(BW, BH + gap + 16)
+    tradeBtn:SetSize(BW, BH)
     tradeBtn:SetPoint("BOTTOMRIGHT", bankBtn, "BOTTOMLEFT", -gap, 0)
     tradeBtn:SetText("Trade")
     tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
     row.tradeBtn = tradeBtn
+
+    local keepBtn = CreateFrame("Button", rn.."K", row, "UIPanelButtonTemplate")
+    keepBtn:SetSize(BW, 16)
+    keepBtn:SetPoint("BOTTOM", tradeBtn, "TOP", 0, 2)
+    keepBtn:SetText("Keep")
+    keepBtn:GetFontString():SetFont(keepBtn:GetFontString():GetFont(), 8)
+    row.keepBtn = keepBtn
 
     local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
     winBtn:SetSize(BW, BH)
@@ -250,6 +257,11 @@ function SR.SetupRowButtonStates(row, item)
     else
         row.tradeBtn:Disable()
     end
+    if item.state == "HOLD" or item.state == "ROLLED" then
+        row.keepBtn:Enable()
+    else
+        row.keepBtn:Disable()
+    end
 end
 
 function SR.SetupRowCallbacks(row, item, mode)
@@ -260,6 +272,7 @@ function SR.SetupRowCallbacks(row, item, mode)
                 SR.uidAwards[item.uid] = nil
                 SR.uidRolled[item.uid] = nil
             end
+            SR.RemovePersistedState(item.itemId)
             if SR.activeRoll and SR.activeRoll.uid == item.uid then
                 SR.SendSync("RX")
                 SR.activeRoll = nil
@@ -299,6 +312,8 @@ function SR.SetupRowCallbacks(row, item, mode)
             SR.DPrint(SR.C_RED.."No winner for this item! Roll first."..SR.C_RESET)
             return
         end
+        SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
+            item.awardWinner, mode == "sr" and "SR" or "ROLL")
         SR.TryTradeItem(item.awardWinner, item.itemId, item.link, item.uid)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
@@ -309,6 +324,8 @@ function SR.SetupRowCallbacks(row, item, mode)
             SR.DPrint(SR.C_RED.."Set bank char: /sr bank <name>"..SR.C_RESET)
             return
         end
+        SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
+            SR.bankCharName, "BANK")
         SR.TryTradeItem(SR.bankCharName, item.itemId, item.link, item.uid)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
@@ -319,8 +336,18 @@ function SR.SetupRowCallbacks(row, item, mode)
             SR.DPrint(SR.C_RED.."Set diss char: /sr diss <name>"..SR.C_RESET)
             return
         end
+        SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
+            SR.dissCharName, "DISS")
         SR.TryTradeItem(SR.dissCharName, item.itemId, item.link, item.uid)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
+    end)
+
+    -- Keep
+    row.keepBtn:SetScript("OnClick", function()
+        SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
+            UnitName("player"), "KEPT")
+        SR.DPrint(SR.C_GREEN.."Kept: "..(item.link or item.name or "?")..SR.C_RESET)
+        SR.RefreshMainFrame()
     end)
 end
 
@@ -365,63 +392,195 @@ end
 ----------------------------------------------------------------------
 -- Refresh main frame
 ----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- History row rendering
+----------------------------------------------------------------------
+local HISTORY_METHOD_COLORS = {
+    SR   = SR.C_GREEN,
+    ROLL = SR.C_YELLOW,
+    BANK = SR.C_CYAN,
+    DISS = SR.C_ORANGE,
+    KEPT = SR.C_GRAY,
+}
+
+local function CreateHistoryRow(parent, index)
+    local rn = "SRI_hist_R"..index
+    local row = CreateFrame("Frame", rn, parent)
+    row:SetHeight(30)
+    row:EnableMouse(true)
+
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    if index % 2 == 0 then bg:SetVertexColor(0.15,0.15,0.15,0.6)
+    else bg:SetVertexColor(0.08,0.08,0.08,0.4) end
+
+    local iconBtn = CreateFrame("Button", rn.."I", row)
+    iconBtn:SetSize(26,26)
+    iconBtn:SetPoint("LEFT",4,0)
+    local iconTex = iconBtn:CreateTexture(nil,"ARTWORK")
+    iconTex:SetAllPoints()
+    row.iconTex = iconTex
+
+    local brd = CreateFrame("Frame", nil, iconBtn)
+    brd:SetPoint("TOPLEFT", -2, 2)
+    brd:SetPoint("BOTTOMRIGHT", 2, -2)
+    brd:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2})
+    row.iconBorder = brd
+
+    iconBtn:SetScript("OnEnter", function(self)
+        if row.link then
+            GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(row.link)
+            GameTooltip:Show()
+        end
+    end)
+    iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    row.itemText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    row.itemText:SetPoint("LEFT", iconBtn, "RIGHT", 6, 0)
+    row.itemText:SetJustifyH("LEFT")
+
+    row.recipientText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    row.recipientText:SetPoint("LEFT", row.itemText, "RIGHT", 6, 0)
+
+    row.methodText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    row.methodText:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+
+    row.dateText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    row.dateText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    row.dateText:SetFont(row.dateText:GetFont(), 9)
+
+    row:Hide()
+    return row
+end
+
+local function SetupHistoryRow(row, entry)
+    row.link = entry.link
+    local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(entry.link or entry.itemId or 0)
+    row.iconTex:SetTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark")
+    local qc = SR.QC(entry.quality or 1)
+    row.iconBorder:SetBackdropBorderColor(qc.r, qc.g, qc.b, 0.8)
+    row.itemText:SetText(SR.QCHex(entry.quality or 1)..(entry.name or "?")..SR.C_RESET)
+    row.recipientText:SetText(SR.C_WHITE.."-> "..SR.C_CYAN..(entry.recipient or "?")..SR.C_RESET)
+    local mc = HISTORY_METHOD_COLORS[entry.method] or SR.C_WHITE
+    row.methodText:SetText(mc..(entry.method or "?")..SR.C_RESET)
+    row.dateText:SetText(SR.C_GRAY..date("%d.%m %H:%M", entry.timestamp or 0)..SR.C_RESET)
+    row:Show()
+end
+
 function SR.RefreshMainFrame()
     if not SR.mainFrame then return end
-    SR.SyncItemUids()
+    local f = SR.mainFrame
+
+    -- Hide all item rows and history rows
     for _, r in ipairs(SR.srRows) do r:Hide() end
     for _, r in ipairs(SR.msRows) do r:Hide() end
+    for _, r in ipairs(SR.historyRows) do r:Hide() end
 
-    local srItems = SR.GetVisibleSRItems()
-    local msItems = SR.GetMSRollItems()
-    local yOff, hdrH = 0, 22
+    -- Toggle visibility of normal vs history UI elements
+    local showNormal = not SR.showHistory
+    f.srHeader:SetAlpha(showNormal and 1 or 0)
+    f.msHeader:SetAlpha(showNormal and 1 or 0)
+    if f.historyHeader then f.historyHeader:SetAlpha(showNormal and 0 or 1) end
 
-    -- SR header
-    SR.mainFrame.srHeader:ClearAllPoints()
-    SR.mainFrame.srHeader:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",5,-yOff)
-    if #srItems > 0 then
-        local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
-        SR.mainFrame.srHeader:SetText(SR.C_GREEN.."=== SOFT RESERVE - "..modeTag.." ("..#srItems..") ==="..SR.C_RESET)
+    -- Show/hide normal bottom buttons
+    if f.normalButtons then
+        for _, btn in ipairs(f.normalButtons) do
+            if showNormal then btn:Show() else btn:Hide() end
+        end
+    end
+    -- Show/hide history bottom buttons
+    if f.historyButtons then
+        for _, btn in ipairs(f.historyButtons) do
+            if showNormal then btn:Hide() else btn:Show() end
+        end
+    end
+
+    if SR.showHistory then
+        -- History view
+        local yOff, hdrH = 0, 22
+        if not f.historyHeader then
+            f.historyHeader = f.content:CreateFontString(nil,"OVERLAY","GameFontNormal")
+        end
+        f.historyHeader:SetAlpha(1)
+        f.historyHeader:ClearAllPoints()
+        f.historyHeader:SetPoint("TOPLEFT", f.content, "TOPLEFT", 5, -yOff)
+        f.historyHeader:SetText(SR.C_CYAN.."=== LOOT HISTORY ("..#SR.lootHistory..") ==="..SR.C_RESET)
+        yOff = yOff + hdrH
+
+        -- Render newest first
+        for i = #SR.lootHistory, 1, -1 do
+            local entry = SR.lootHistory[i]
+            local idx = #SR.lootHistory - i + 1
+            local row = SR.historyRows[idx]
+            if not row then
+                row = CreateHistoryRow(f.content, idx)
+                SR.historyRows[idx] = row
+            end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", f.content, "TOPLEFT", 0, -yOff)
+            row:SetPoint("RIGHT", f.content, "RIGHT", 0, 0)
+            SetupHistoryRow(row, entry)
+            yOff = yOff + 30
+        end
+
+        f.content:SetHeight(math.max(yOff + 10, 1))
     else
-        SR.mainFrame.srHeader:SetText(SR.C_GRAY.."=== SOFT RESERVE (none visible) ==="..SR.C_RESET)
+        -- Normal view
+        SR.SyncItemUids()
+        local srItems = SR.GetVisibleSRItems()
+        local msItems = SR.GetMSRollItems()
+        local yOff, hdrH = 0, 22
+
+        -- SR header
+        f.srHeader:ClearAllPoints()
+        f.srHeader:SetPoint("TOPLEFT", f.content,"TOPLEFT",5,-yOff)
+        if #srItems > 0 then
+            local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
+            f.srHeader:SetText(SR.C_GREEN.."=== SOFT RESERVE - "..modeTag.." ("..#srItems..") ==="..SR.C_RESET)
+        else
+            f.srHeader:SetText(SR.C_GRAY.."=== SOFT RESERVE (none visible) ==="..SR.C_RESET)
+        end
+        yOff = yOff + hdrH
+
+        for i, item in ipairs(srItems) do
+            local row = SR.srRows[i]
+            if not row then row = CreateRow(f.content, SR.srRows, i, "sr") end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", f.content,"TOPLEFT",0,-yOff)
+            row:SetPoint("RIGHT", f.content,"RIGHT",0,0)
+            SetupRow(row, item, "sr")
+            yOff = yOff + (row.dynamicHeight or SR.ROW_HEIGHT)
+        end
+
+        yOff = yOff + 10
+
+        -- MS header
+        f.msHeader:ClearAllPoints()
+        f.msHeader:SetPoint("TOPLEFT", f.content,"TOPLEFT",5,-yOff)
+        if #msItems > 0 then
+            local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
+            f.msHeader:SetText(SR.C_YELLOW.."=== ROLL - "..modeTag.." ("..#msItems..") ==="..SR.C_RESET)
+        else
+            f.msHeader:SetText(SR.C_GRAY.."=== ROLL (none) ==="..SR.C_RESET)
+        end
+        yOff = yOff + hdrH
+
+        for i, item in ipairs(msItems) do
+            local row = SR.msRows[i]
+            if not row then row = CreateRow(f.content, SR.msRows, i, "ms") end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", f.content,"TOPLEFT",0,-yOff)
+            row:SetPoint("RIGHT", f.content,"RIGHT",0,0)
+            SetupRow(row, item, "ms")
+            yOff = yOff + SR.ROW_HEIGHT
+        end
+
+        f.content:SetHeight(math.max(yOff+10, 1))
     end
-    yOff = yOff + hdrH
 
-    for i, item in ipairs(srItems) do
-        local row = SR.srRows[i]
-        if not row then row = CreateRow(SR.mainFrame.content, SR.srRows, i, "sr") end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",0,-yOff)
-        row:SetPoint("RIGHT", SR.mainFrame.content,"RIGHT",0,0)
-        SetupRow(row, item, "sr")
-        yOff = yOff + (row.dynamicHeight or SR.ROW_HEIGHT)
-    end
-
-    yOff = yOff + 10
-
-    -- MS header
-    SR.mainFrame.msHeader:ClearAllPoints()
-    SR.mainFrame.msHeader:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",5,-yOff)
-    if #msItems > 0 then
-        local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
-        SR.mainFrame.msHeader:SetText(SR.C_YELLOW.."=== ROLL - "..modeTag.." ("..#msItems..") ==="..SR.C_RESET)
-    else
-        SR.mainFrame.msHeader:SetText(SR.C_GRAY.."=== ROLL (none) ==="..SR.C_RESET)
-    end
-    yOff = yOff + hdrH
-
-    for i, item in ipairs(msItems) do
-        local row = SR.msRows[i]
-        if not row then row = CreateRow(SR.mainFrame.content, SR.msRows, i, "ms") end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",0,-yOff)
-        row:SetPoint("RIGHT", SR.mainFrame.content,"RIGHT",0,0)
-        SetupRow(row, item, "ms")
-        yOff = yOff + SR.ROW_HEIGHT
-    end
-
-    SR.mainFrame.content:SetHeight(math.max(yOff+10, 1))
-
-    -- Status
+    -- Status (always shown)
     local pc = 0
     for _ in pairs(SR.reservesByName) do pc = pc + 1 end
     local rs = ""
@@ -435,12 +594,12 @@ function SR.RefreshMainFrame()
     else
         srStatus = SR.C_GRAY.."No SR imported"
     end
-    SR.mainFrame.statusText:SetText(srStatus..rs)
+    f.statusText:SetText(srStatus..rs)
     -- Bank/Diss display
-    if SR.mainFrame.bankText then
+    if f.bankText then
         local bankStr = SR.bankCharName and (SR.C_CYAN..SR.bankCharName..SR.C_RESET) or (SR.C_RED.."not set"..SR.C_RESET)
         local dissStr = SR.dissCharName and (SR.C_CYAN..SR.dissCharName..SR.C_RESET) or (SR.C_RED.."not set"..SR.C_RESET)
-        SR.mainFrame.bankText:SetText(SR.C_GRAY.."Bank: "..bankStr..SR.C_GRAY.." | Diss: "..dissStr)
+        f.bankText:SetText(SR.C_GRAY.."Bank: "..bankStr..SR.C_GRAY.." | Diss: "..dissStr)
     end
 end
 
@@ -475,6 +634,23 @@ function SR.CreateMainFrame(silent)
 
     local closeX = CreateFrame("Button",nil,f,"UIPanelCloseButton")
     closeX:SetPoint("TOPRIGHT",-2,-2)
+
+    -- History checkbox (top-right, left of close X)
+    local histCheck = CreateFrame("CheckButton", nil, f)
+    histCheck:SetSize(20, 20)
+    histCheck:SetPoint("RIGHT", closeX, "LEFT", -4, 0)
+    histCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+    histCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+    histCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+    histCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    histCheck:SetChecked(SR.showHistory)
+    histCheck.label = histCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    histCheck.label:SetPoint("RIGHT", histCheck, "LEFT", -2, 0)
+    histCheck.label:SetText(SR.C_CYAN.."History")
+    histCheck:SetScript("OnClick", function(self)
+        SR.showHistory = self:GetChecked() and true or false
+        SR.RefreshMainFrame()
+    end)
 
     local t = f:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
     t:SetPoint("TOP",0,-12)
@@ -730,6 +906,89 @@ function SR.CreateMainFrame(silent)
     btn4:SetText("Close")
     btn4:SetScript("OnClick", function() f:Hide() end)
 
+    -- Collect normal bottom buttons for show/hide toggling
+    f.normalButtons = {btn2, btn3, btnHR, btnHRAnn, btnSetBank, btnSetDiss, btnGrab,
+                       f.boeCheckbox, f.rarityDropdown, bankText}
+
+    -- History bottom buttons (hidden by default)
+    local btnResetHist = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnResetHist:SetSize(90,22); btnResetHist:SetPoint("RIGHT", btn1, "LEFT", -4, 0)
+    btnResetHist:SetText("Reset History")
+    btnResetHist:GetFontString():SetFont(btnResetHist:GetFontString():GetFont(), 9)
+    btnResetHist:SetScript("OnClick", function()
+        SR.ClearLootHistory()
+        SR.DPrint(SR.C_YELLOW.."Loot history cleared."..SR.C_RESET)
+        SR.RefreshMainFrame()
+    end)
+    btnResetHist:Hide()
+
+    local btnExport = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnExport:SetSize(90,22); btnExport:SetPoint("RIGHT", btn4, "LEFT", -4, 0)
+    btnExport:SetText("Export CSV")
+    btnExport:GetFontString():SetFont(btnExport:GetFontString():GetFont(), 9)
+    btnExport:SetScript("OnClick", function()
+        SR.CreateExportFrame()
+    end)
+    btnExport:Hide()
+
+    f.historyButtons = {btnResetHist, btnExport}
+
     SR.mainFrame = f
     SR.RefreshMainFrame()
+end
+
+----------------------------------------------------------------------
+-- Export frame (CSV popup)
+----------------------------------------------------------------------
+function SR.CreateExportFrame()
+    if SR.exportFrame then
+        SR.exportFrame.editBox:SetText(SR.ExportLootHistoryCSV())
+        SR.exportFrame:Show()
+        SR.exportFrame.editBox:HighlightText()
+        SR.exportFrame.editBox:SetFocus()
+        return
+    end
+
+    local ef = CreateFrame("Frame", "SRIExportFrame", UIParent)
+    ef:SetSize(500, 350)
+    ef:SetPoint("CENTER")
+    ef:SetBackdrop({
+        bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile=true, tileSize=32, edgeSize=32,
+        insets={left=8,right=8,top=8,bottom=8},
+    })
+    ef:SetBackdropColor(0,0,0,0.95)
+    ef:SetMovable(true); ef:EnableMouse(true)
+    ef:RegisterForDrag("LeftButton")
+    ef:SetScript("OnDragStart", ef.StartMoving)
+    ef:SetScript("OnDragStop", ef.StopMovingOrSizing)
+    ef:SetFrameStrata("FULLSCREEN_DIALOG")
+    tinsert(UISpecialFrames, "SRIExportFrame")
+
+    local closeX = CreateFrame("Button",nil,ef,"UIPanelCloseButton")
+    closeX:SetPoint("TOPRIGHT",-2,-2)
+
+    local title = ef:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+    title:SetPoint("TOP",0,-12)
+    title:SetText(SR.C_CYAN.."Loot History Export"..SR.C_RESET)
+
+    local sc = CreateFrame("ScrollFrame", "SRIExportScroll", ef, "UIPanelScrollFrameTemplate")
+    sc:SetPoint("TOPLEFT", 12, -36)
+    sc:SetPoint("BOTTOMRIGHT", -32, 12)
+
+    local eb = CreateFrame("EditBox", "SRIExportEditBox", sc)
+    eb:SetMultiLine(true)
+    eb:SetAutoFocus(false)
+    eb:SetFontObject(GameFontHighlightSmall)
+    eb:SetWidth(sc:GetWidth() - 10)
+    eb:SetScript("OnEscapePressed", function(self) self:ClearFocus(); ef:Hide() end)
+    sc:SetScrollChild(eb)
+
+    ef.editBox = eb
+    SR.exportFrame = ef
+
+    eb:SetText(SR.ExportLootHistoryCSV())
+    eb:HighlightText()
+    eb:SetFocus()
 end

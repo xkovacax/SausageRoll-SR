@@ -10,6 +10,7 @@ function SR.StartRoll(uid, itemId, link, mode)
     SR.countdownTimer = nil
     SR.activeRoll = {uid=uid, itemId=itemId, link=link, mode=mode, rolls={}}
     SR.uidRolled[uid] = true
+    SR.PersistRolled(itemId)
     if mode == "sr" then
         local entries = SR.reserves[itemId]
         if entries then
@@ -190,6 +191,7 @@ end
 function SR.RecordAward(uid, itemId, link, winnerName)
     table.insert(SR.awardLog, {itemId=itemId, winner=winnerName, link=link})
     SR.uidAwards[uid] = {winner=winnerName, link=link}
+    SR.PersistAward(itemId, winnerName, link)
 end
 
 function SR.AnnounceWinnerFinal()
