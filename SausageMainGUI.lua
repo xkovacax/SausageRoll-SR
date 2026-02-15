@@ -629,13 +629,12 @@ function SR.CreateMainFrame(silent)
     histCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
     histCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
     histCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    histCheck:SetChecked(SR.showHistory)
+    histCheck:SetChecked(SR.historyEnabled)
     histCheck.label = histCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     histCheck.label:SetPoint("LEFT", histCheck, "RIGHT", 2, 0)
     histCheck.label:SetText(SR.C_CYAN.."History")
     histCheck:SetScript("OnClick", function(self)
-        SR.showHistory = self:GetChecked() and true or false
-        SR.RefreshMainFrame()
+        SR.historyEnabled = self:GetChecked() and true or false
     end)
 
     local headerTex = f:CreateTexture(nil, "ARTWORK")
@@ -899,13 +898,22 @@ function SR.CreateMainFrame(silent)
     btn4:SetText("Close")
     btn4:SetScript("OnClick", function() f:Hide() end)
 
+    -- History button (normal view) — switches to history view
+    local btnHistory = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnHistory:SetSize(70,22); btnHistory:SetPoint("BOTTOMRIGHT",-74,12)
+    btnHistory:SetText("History")
+    btnHistory:SetScript("OnClick", function()
+        SR.showHistory = true
+        SR.RefreshMainFrame()
+    end)
+
     -- Collect normal bottom buttons for show/hide toggling
     f.normalButtons = {btn2, btn3, btnHR, btnHRAnn, btnSetBank, btnSetDiss, btnGrab,
-                       f.boeCheckbox, f.rarityDropdown, bankText}
+                       f.boeCheckbox, f.rarityDropdown, bankText, btnHistory}
 
     -- History bottom buttons (hidden by default)
     local btnResetHist = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnResetHist:SetSize(90,22); btnResetHist:SetPoint("RIGHT", btn1, "LEFT", -4, 0)
+    btnResetHist:SetSize(90,22); btnResetHist:SetPoint("BOTTOMLEFT", 10, 36)
     btnResetHist:SetText("Reset History")
     btnResetHist:GetFontString():SetFont(btnResetHist:GetFontString():GetFont(), 9)
     btnResetHist:SetScript("OnClick", function()
@@ -916,7 +924,7 @@ function SR.CreateMainFrame(silent)
     btnResetHist:Hide()
 
     local btnExport = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
-    btnExport:SetSize(90,22); btnExport:SetPoint("RIGHT", btn4, "LEFT", -4, 0)
+    btnExport:SetSize(90,22); btnExport:SetPoint("BOTTOMLEFT", 10, 12)
     btnExport:SetText("Export CSV")
     btnExport:GetFontString():SetFont(btnExport:GetFontString():GetFont(), 9)
     btnExport:SetScript("OnClick", function()
@@ -924,7 +932,17 @@ function SR.CreateMainFrame(silent)
     end)
     btnExport:Hide()
 
-    f.historyButtons = {btnResetHist, btnExport}
+    -- Back button (history view) — returns to normal view
+    local btnBackHist = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnBackHist:SetSize(60,22); btnBackHist:SetPoint("BOTTOMRIGHT",-74,12)
+    btnBackHist:SetText("Back")
+    btnBackHist:SetScript("OnClick", function()
+        SR.showHistory = false
+        SR.RefreshMainFrame()
+    end)
+    btnBackHist:Hide()
+
+    f.historyButtons = {btnResetHist, btnExport, btnBackHist}
 
     SR.mainFrame = f
     SR.RefreshMainFrame()
