@@ -19,8 +19,6 @@ function SR.AssignUid(slotKey, itemId)
 end
 
 function SR.SyncItemUids()
-    wipe(SR.pendingOrphans)
-
     -- 1) Mark all loot UIDs as potential orphans
     local lootOrphans = {}
     local lootKeysToRemove = {}
@@ -52,6 +50,16 @@ function SR.SyncItemUids()
                             break
                         end
                     end
+                    -- Also try pendingOrphans (loot close→reopen reclaim)
+                    if not matched then
+                        local pOrphans = SR.pendingOrphans[itemId]
+                        if pOrphans and #pOrphans > 0 then
+                            local uid = table.remove(pOrphans, 1)
+                            SR.slotToUid[key] = uid
+                            SR.uidToSlot[uid] = key
+                            matched = true
+                        end
+                    end
                     if not matched then
                         SR.AssignUid(key, itemId)
                     end
@@ -60,14 +68,14 @@ function SR.SyncItemUids()
         end
     end
 
-    -- 3) Remaining orphans = items that left loot (may appear in bags)
+    -- 3) Remaining loot orphans → pendingOrphans (may reappear in bags or loot)
     for uid, itemId in pairs(lootOrphans) do
         if not SR.pendingOrphans[itemId] then SR.pendingOrphans[itemId] = {} end
         table.insert(SR.pendingOrphans[itemId], uid)
         SR.uidToSlot[uid] = nil
     end
 
-    -- 4) Clean bag UIDs for items no longer at original slot
+    -- 4) Clean bag UIDs for items no longer at original slot → pendingOrphans
     local bagKeysToRemove = {}
     for key, uid in pairs(SR.slotToUid) do
         local bagStr, slotStr = key:match("^bag:(%d+):(%d+)$")
@@ -77,6 +85,11 @@ function SR.SyncItemUids()
             if not link or SR.GetItemIdFromLink(link) ~= SR.uidToItemId[uid] then
                 table.insert(bagKeysToRemove, key)
                 SR.uidToSlot[uid] = nil
+                local orphanItemId = SR.uidToItemId[uid]
+                if orphanItemId then
+                    if not SR.pendingOrphans[orphanItemId] then SR.pendingOrphans[orphanItemId] = {} end
+                    table.insert(SR.pendingOrphans[orphanItemId], uid)
+                end
             end
         end
     end
@@ -292,6 +305,46 @@ function SR.RecordLootHistory(itemId, link, name, quality, recipient, method, ui
     table.insert(SR.lootHistory, entry)
     if not SausageRollImportDB.lootHistory then SausageRollImportDB.lootHistory = {} end
     table.insert(SausageRollImportDB.lootHistory, entry)
+end
+
+function SR.RemoveLootHistoryByUid(uid, itemId)
+    if not uid and not itemId then return end
+    local found = false
+    -- Try exact UID match first
+    if uid then
+        for i = #SR.lootHistory, 1, -1 do
+            if SR.lootHistory[i].uid == uid then
+                table.remove(SR.lootHistory, i)
+                found = true
+                break
+            end
+        end
+        if SausageRollImportDB.lootHistory then
+            for i = #SausageRollImportDB.lootHistory, 1, -1 do
+                if SausageRollImportDB.lootHistory[i].uid == uid then
+                    table.remove(SausageRollImportDB.lootHistory, i)
+                    break
+                end
+            end
+        end
+    end
+    -- Fallback: remove most recent entry for this itemId (handles UID mismatch after /reload)
+    if not found and itemId then
+        for i = #SR.lootHistory, 1, -1 do
+            if SR.lootHistory[i].itemId == itemId then
+                table.remove(SR.lootHistory, i)
+                break
+            end
+        end
+        if SausageRollImportDB.lootHistory then
+            for i = #SausageRollImportDB.lootHistory, 1, -1 do
+                if SausageRollImportDB.lootHistory[i].itemId == itemId then
+                    table.remove(SausageRollImportDB.lootHistory, i)
+                    break
+                end
+            end
+        end
+    end
 end
 
 function SR.ClearLootHistory()

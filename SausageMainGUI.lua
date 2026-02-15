@@ -260,6 +260,7 @@ function SR.SetupRowCallbacks(row, item, mode)
                 SR.uidAwards[item.uid] = nil
                 SR.uidRolled[item.uid] = nil
             end
+            SR.RemoveLootHistoryByUid(item.uid, item.itemId)
             SR.RemovePersistedState(item.itemId)
             if SR.activeRoll and SR.activeRoll.uid == item.uid then
                 SR.SendSync("RX")
