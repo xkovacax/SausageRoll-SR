@@ -25,7 +25,6 @@ SR.COUNTDOWN_SECS = 3
 
 -- Row heights
 SR.ROW_HEIGHT = 42
-SR.MS_ROW_HEIGHT = 56
 
 -- Shared data tables (NEVER replace — only wipe+copy)
 SR.reserves = {}
@@ -67,7 +66,6 @@ SR.rollFrame = nil
 SR.clientRollFrame = nil
 
 -- Dropdown frames (created once)
-SR.rollModeMenuFrame = CreateFrame("Frame", "SRI_RollModeMenu", UIParent, "UIDropDownMenuTemplate")
 SR.charDropdownFrame = CreateFrame("Frame", "SRI_CharDropdownMenu", UIParent, "UIDropDownMenuTemplate")
 
 -- SavedVariables init

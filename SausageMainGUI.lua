@@ -9,7 +9,7 @@ local SR = SausageRollNS
 local function CreateRow(parent, rowTable, index, mode)
     local rn = "SRI_"..mode.."_R"..index
     local row = CreateFrame("Frame", rn, parent)
-    row:SetHeight(mode == "ms" and SR.MS_ROW_HEIGHT or SR.ROW_HEIGHT)
+    row:SetHeight(SR.ROW_HEIGHT)
     row:EnableMouse(true)
 
     local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -59,18 +59,12 @@ local function CreateRow(parent, rowTable, index, mode)
     row.dissBtn = dissBtn
 
     local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
-    tradeBtn:SetSize(BW, BH)
+    tradeBtn:SetSize(BW, BH + gap + 16)
+    tradeBtn:SetPoint("BOTTOM", bankBtn, "BOTTOM", 0, 0)
     tradeBtn:SetPoint("RIGHT", bankBtn, "LEFT", -gap, 0)
     tradeBtn:SetText("Trade")
     tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
     row.tradeBtn = tradeBtn
-
-    local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
-    resetBtn:SetSize(BW, 16)
-    resetBtn:SetPoint("BOTTOMLEFT", tradeBtn, "TOPLEFT", 0, 2)
-    resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
-    resetBtn:SetText("Reset")
-    row.resetBtn = resetBtn
 
     local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
     winBtn:SetSize(BW, BH)
@@ -86,24 +80,12 @@ local function CreateRow(parent, rowTable, index, mode)
     rollBtn:GetFontString():SetFont(rollBtn:GetFontString():GetFont(), BF)
     row.rollBtn = rollBtn
 
-    if mode == "ms" then
-        local modeBtn = CreateFrame("Button", rn.."Mode", row, "UIPanelButtonTemplate")
-        modeBtn:SetSize(BW*2 + gap, 16)
-        modeBtn:SetPoint("BOTTOMLEFT", rollBtn, "TOPLEFT", 0, 2)
-        modeBtn:GetFontString():SetFont(modeBtn:GetFontString():GetFont(), 8)
-        modeBtn:SetText("MS")
-        row.modeBtn = modeBtn
-        row.rollMode = "ms"
-
-        modeBtn:SetScript("OnClick", function(self)
-            local menuList = {
-                {text = "MS", checked = (row.rollMode == "ms"), func = function() row.rollMode = "ms"; modeBtn:SetText("MS"); row.infoText:SetText(SR.C_YELLOW.."MS Roll"..SR.C_RESET) end},
-                {text = "OS", checked = (row.rollMode == "os"), func = function() row.rollMode = "os"; modeBtn:SetText("OS"); row.infoText:SetText(SR.C_YELLOW.."OS Roll"..SR.C_RESET) end},
-                {text = "FREELOOT", checked = (row.rollMode == "freeloot"), func = function() row.rollMode = "freeloot"; modeBtn:SetText("FREELOOT"); row.infoText:SetText(SR.C_YELLOW.."FREELOOT Roll"..SR.C_RESET) end},
-            }
-            EasyMenu(menuList, SR.rollModeMenuFrame, self, 0, 0, "MENU")
-        end)
-    end
+    local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
+    resetBtn:SetSize(BW*2 + gap, 16)
+    resetBtn:SetPoint("BOTTOMLEFT", rollBtn, "TOPLEFT", 0, 2)
+    resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
+    resetBtn:SetText("Reset")
+    row.resetBtn = resetBtn
 
     -- Source + Trade timer: left of Roll button
     local srcText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
@@ -202,8 +184,7 @@ function SR.SetupRowItemText(row, item, mode)
         row.dynamicHeight = math.max(SR.ROW_HEIGHT, 20 + textHeight + 4)
         row:SetHeight(row.dynamicHeight)
     else
-        local rollLabel = (row.rollMode or "ms"):upper()
-        row.infoText:SetText(SR.C_YELLOW..rollLabel.." Roll"..SR.C_RESET)
+        row.infoText:SetText(SR.C_YELLOW.."MS/OS Roll"..SR.C_RESET)
         row.fullInfoText = ""
     end
 end
@@ -295,7 +276,7 @@ function SR.SetupRowCallbacks(row, item, mode)
 
     -- Roll
     row.rollBtn:SetScript("OnClick", function()
-        local effectiveMode = (mode == "sr") and mode or (row.rollMode or "ms")
+        local effectiveMode = (mode == "sr") and mode or "ms"
         SR.StartRoll(item.uid, item.itemId, item.link, effectiveMode)
         row.rollBtn:Disable()
     end)
@@ -436,7 +417,7 @@ function SR.RefreshMainFrame()
         row:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",0,-yOff)
         row:SetPoint("RIGHT", SR.mainFrame.content,"RIGHT",0,0)
         SetupRow(row, item, "ms")
-        yOff = yOff + SR.MS_ROW_HEIGHT
+        yOff = yOff + SR.ROW_HEIGHT
     end
 
     SR.mainFrame.content:SetHeight(math.max(yOff+10, 1))
