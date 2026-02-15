@@ -6,4 +6,16 @@
 ## SavedVariables: SausageRollImportDB
 ## DefaultState: enabled
 
-SausageRoll-SR.lua
+SausageCore.lua
+SausageTooltip.lua
+SausageData.lua
+SausageItems.lua
+SausageSync.lua
+SausageTrade.lua
+SausageRoll.lua
+SausageRollGUI.lua
+SausageClientRollGUI.lua
+SausageMainGUI.lua
+SausageImportGUI.lua
+SausageMinimap.lua
+SausageInit.lua

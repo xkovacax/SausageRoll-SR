@@ -1,0 +1,735 @@
+----------------------------------------------------------------------
+-- SausageMainGUI.lua - Main window, rows, buttons
+----------------------------------------------------------------------
+local SR = SausageRollNS
+
+----------------------------------------------------------------------
+-- Row builder
+----------------------------------------------------------------------
+local function CreateRow(parent, rowTable, index, mode)
+    local rn = "SRI_"..mode.."_R"..index
+    local row = CreateFrame("Frame", rn, parent)
+    row:SetHeight(mode == "ms" and SR.MS_ROW_HEIGHT or SR.ROW_HEIGHT)
+    row:EnableMouse(true)
+
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    if index % 2 == 0 then bg:SetVertexColor(0.15,0.15,0.15,0.6)
+    else bg:SetVertexColor(0.08,0.08,0.08,0.4) end
+
+    local iconBtn = CreateFrame("Button", rn.."I", row)
+    iconBtn:SetSize(30,30)
+    iconBtn:SetPoint("LEFT",4,0)
+    local iconTex = iconBtn:CreateTexture(nil,"ARTWORK")
+    iconTex:SetAllPoints()
+    row.iconTex = iconTex
+
+    local brd = CreateFrame("Frame", nil, iconBtn)
+    brd:SetPoint("TOPLEFT", -2, 2)
+    brd:SetPoint("BOTTOMRIGHT", 2, -2)
+    brd:SetBackdrop({edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2})
+    row.iconBorder = brd
+
+    iconBtn:SetScript("OnEnter", function(self)
+        if row.link then
+            GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(row.link)
+            GameTooltip:Show()
+        end
+    end)
+    iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Buttons right-aligned: Roll | Winner | Trade | Bank
+    local BW, BH, BF = 55, 18, 9
+    local gap = 2
+
+    local bankBtn = CreateFrame("Button", rn.."B", row, "UIPanelButtonTemplate")
+    bankBtn:SetSize(BW, BH)
+    bankBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    bankBtn:SetText("Bank")
+    bankBtn:GetFontString():SetFont(bankBtn:GetFontString():GetFont(), BF)
+    row.bankBtn = bankBtn
+
+    local dissBtn = CreateFrame("Button", rn.."D", row, "UIPanelButtonTemplate")
+    dissBtn:SetSize(BW, 16)
+    dissBtn:SetPoint("BOTTOM", bankBtn, "TOP", 0, 2)
+    dissBtn:SetText("Diss")
+    dissBtn:GetFontString():SetFont(dissBtn:GetFontString():GetFont(), 8)
+    row.dissBtn = dissBtn
+
+    local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
+    tradeBtn:SetSize(BW, BH)
+    tradeBtn:SetPoint("RIGHT", bankBtn, "LEFT", -gap, 0)
+    tradeBtn:SetText("Trade")
+    tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
+    row.tradeBtn = tradeBtn
+
+    local resetBtn = CreateFrame("Button", rn.."Reset", row, "UIPanelButtonTemplate")
+    resetBtn:SetSize(BW, 16)
+    resetBtn:SetPoint("BOTTOMLEFT", tradeBtn, "TOPLEFT", 0, 2)
+    resetBtn:GetFontString():SetFont(resetBtn:GetFontString():GetFont(), 8)
+    resetBtn:SetText("Reset")
+    row.resetBtn = resetBtn
+
+    local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
+    winBtn:SetSize(BW, BH)
+    winBtn:SetPoint("RIGHT", tradeBtn, "LEFT", -gap, 0)
+    winBtn:SetText("Winner")
+    winBtn:GetFontString():SetFont(winBtn:GetFontString():GetFont(), BF)
+    row.winBtn = winBtn
+
+    local rollBtn = CreateFrame("Button", rn.."R", row, "UIPanelButtonTemplate")
+    rollBtn:SetSize(BW, BH)
+    rollBtn:SetPoint("RIGHT", winBtn, "LEFT", -gap, 0)
+    rollBtn:SetText("Roll")
+    rollBtn:GetFontString():SetFont(rollBtn:GetFontString():GetFont(), BF)
+    row.rollBtn = rollBtn
+
+    if mode == "ms" then
+        local modeBtn = CreateFrame("Button", rn.."Mode", row, "UIPanelButtonTemplate")
+        modeBtn:SetSize(BW*2 + gap, 16)
+        modeBtn:SetPoint("BOTTOMLEFT", rollBtn, "TOPLEFT", 0, 2)
+        modeBtn:GetFontString():SetFont(modeBtn:GetFontString():GetFont(), 8)
+        modeBtn:SetText("MS")
+        row.modeBtn = modeBtn
+        row.rollMode = "ms"
+
+        modeBtn:SetScript("OnClick", function(self)
+            local menuList = {
+                {text = "MS", checked = (row.rollMode == "ms"), func = function() row.rollMode = "ms"; modeBtn:SetText("MS"); row.infoText:SetText(SR.C_YELLOW.."MS Roll"..SR.C_RESET) end},
+                {text = "OS", checked = (row.rollMode == "os"), func = function() row.rollMode = "os"; modeBtn:SetText("OS"); row.infoText:SetText(SR.C_YELLOW.."OS Roll"..SR.C_RESET) end},
+                {text = "FREELOOT", checked = (row.rollMode == "freeloot"), func = function() row.rollMode = "freeloot"; modeBtn:SetText("FREELOOT"); row.infoText:SetText(SR.C_YELLOW.."FREELOOT Roll"..SR.C_RESET) end},
+            }
+            EasyMenu(menuList, SR.rollModeMenuFrame, self, 0, 0, "MENU")
+        end)
+    end
+
+    -- Source + Trade timer: left of Roll button
+    local srcText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    srcText:SetPoint("RIGHT", rollBtn, "LEFT", -6, 6)
+    row.srcText = srcText
+
+    local tradeTimerText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    tradeTimerText:SetPoint("RIGHT", rollBtn, "LEFT", -6, -6)
+    tradeTimerText:SetFont(tradeTimerText:GetFont(), 9)
+    row.tradeText = tradeTimerText
+
+    -- Item name (top line)
+    local itemText = row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    itemText:SetPoint("TOPLEFT", iconBtn,"TOPRIGHT",6,-2)
+    itemText:SetPoint("RIGHT", srcText, "LEFT", -8, 0)
+    itemText:SetJustifyH("LEFT")
+    row.itemText = itemText
+
+    -- Info line (SR names / MS Roll) — hoverable for full list
+    local infoBtn = CreateFrame("Button", rn.."Info", row)
+    infoBtn:SetPoint("TOPLEFT", iconBtn,"TOPRIGHT",6,-16)
+    infoBtn:SetPoint("RIGHT", srcText, "LEFT", -8, 0)
+    local infoText = infoBtn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    infoText:SetPoint("TOPLEFT")
+    infoText:SetPoint("TOPRIGHT")
+    infoText:SetJustifyH("LEFT")
+    infoText:SetFont(infoText:GetFont(), 9)
+    infoText:SetNonSpaceWrap(true)
+    row.infoText = infoText
+    row.infoBtn = infoBtn
+    row.fullInfoText = ""
+
+    infoBtn:SetScript("OnEnter", function(self)
+        if row.fullInfoText and row.fullInfoText ~= "" then
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine("Soft Reserves:", 1, 0.82, 0, false)
+            for part in row.fullInfoText:gmatch("[^,]+") do
+                part = part:match("^%s*(.-)%s*$")
+                GameTooltip:AddLine(part, 0, 1, 1, false)
+            end
+            GameTooltip:Show()
+        end
+    end)
+    infoBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    row:Hide()
+    table.insert(rowTable, row)
+    return row
+end
+
+----------------------------------------------------------------------
+-- SetupRow sub-functions
+----------------------------------------------------------------------
+function SR.SetupRowIcon(row, item)
+    row.iconTex:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    local qc = SR.QC(item.quality)
+    row.iconBorder:SetBackdropBorderColor(qc.r, qc.g, qc.b, 0.8)
+end
+
+function SR.SetupRowItemText(row, item, mode)
+    row.itemText:SetText(SR.QCHex(item.quality)..(item.name or "?")..SR.C_RESET)
+
+    if mode == "sr" and item.reservers then
+        local plainNames = {}
+        local colorNames = {}
+        for _, r in ipairs(item.reservers) do
+            table.insert(plainNames, r.name)
+            local color = SR.C_CYAN
+            if SR.IsInRaid() then
+                local found = false
+                for i=1,GetNumRaidMembers() do
+                    local rn = GetRaidRosterInfo(i)
+                    if rn and rn:lower()==r.name:lower() then found=true; break end
+                end
+                if not found then color = SR.C_RED end
+            end
+            table.insert(colorNames, color..r.name..SR.C_RESET)
+        end
+        row.fullInfoText = table.concat(plainNames, ", ")
+        local header = "SR: "..SR.C_ORANGE.."[x"..#item.reservers.."]"..SR.C_RESET
+        local nameLines = {}
+        for idx = 1, #colorNames, 4 do
+            local chunk = {}
+            for j = idx, math.min(idx + 3, #colorNames) do
+                table.insert(chunk, colorNames[j])
+            end
+            table.insert(nameLines, table.concat(chunk, ", "))
+        end
+        local info = header.."\n"..table.concat(nameLines, "\n")
+        row.infoText:SetText(info)
+        local lineCount = 1 + #nameLines
+        local lineH = 12
+        local textHeight = lineCount * lineH
+        row.infoBtn:SetHeight(textHeight)
+        row.dynamicHeight = math.max(SR.ROW_HEIGHT, 20 + textHeight + 4)
+        row:SetHeight(row.dynamicHeight)
+    else
+        local rollLabel = (row.rollMode or "ms"):upper()
+        row.infoText:SetText(SR.C_YELLOW..rollLabel.." Roll"..SR.C_RESET)
+        row.fullInfoText = ""
+    end
+end
+
+function SR.SetupRowStatusText(row, item)
+    if item.state == "AWARDED" then
+        row.srcText:SetText(SR.C_GREEN.."AWARDED"..SR.C_RESET)
+        row.tradeText:SetText(SR.C_CYAN.."-> "..item.awardWinner..SR.C_RESET)
+    elseif item.source == "loot" then
+        row.srcText:SetText(SR.C_ORANGE.."HOLD"..SR.C_RESET)
+        row.tradeText:SetText(SR.C_GREEN.."LOOT"..SR.C_RESET)
+    else
+        row.srcText:SetText(SR.C_ORANGE.."HOLD"..SR.C_RESET)
+        if item.tradeTime then
+            local totalMins = math.floor(item.tradeTime / 60)
+            local hours = math.floor(totalMins / 60)
+            local mins = totalMins - (hours * 60)
+            local timeStr = hours > 0 and (hours.."h "..mins.."m") or (mins.."m")
+            local tColor = SR.C_GREEN
+            if totalMins < 10 then tColor = SR.C_RED
+            elseif totalMins < 30 then tColor = SR.C_YELLOW end
+            row.tradeText:SetText(tColor..timeStr..SR.C_RESET)
+        elseif item.isBoE then
+            row.tradeText:SetText(SR.C_GREEN.."BoE"..SR.C_RESET)
+        else
+            row.tradeText:SetText(SR.C_GRAY.."BAG"..SR.C_RESET)
+        end
+    end
+end
+
+function SR.SetupRowButtonStates(row, item)
+    local hasRoll = (SR.activeRoll and SR.activeRoll.uid == item.uid) or (SR.finishedRoll and SR.finishedRoll.uid == item.uid)
+    if item.state == "AWARDED" or hasRoll then
+        row.rollBtn:Disable()
+    else
+        row.rollBtn:Enable()
+    end
+    if item.state == "AWARDED" or (SR.finishedRoll and SR.finishedRoll.uid == item.uid) then
+        row.winBtn:Disable()
+    else
+        row.winBtn:Enable()
+    end
+    if item.awardWinner then
+        row.tradeBtn:Enable()
+    else
+        row.tradeBtn:Disable()
+    end
+end
+
+function SR.SetupRowCallbacks(row, item, mode)
+    -- Reset button
+    if row.resetBtn then
+        row.resetBtn:SetScript("OnClick", function()
+            if item.uid then
+                SR.uidAwards[item.uid] = nil
+            end
+            if SR.activeRoll and SR.activeRoll.uid == item.uid then
+                SR.SendSync("RX")
+                SR.activeRoll = nil
+                SR.countdownTimer = nil
+            end
+            if SR.finishedRoll and SR.finishedRoll.uid == item.uid then
+                SR.CloseRollWindow()
+            end
+            SR.RefreshMainFrame()
+        end)
+        row.resetBtn:Enable()
+    end
+
+    -- Roll
+    row.rollBtn:SetScript("OnClick", function()
+        local effectiveMode = (mode == "sr") and mode or (row.rollMode or "ms")
+        SR.StartRoll(item.uid, item.itemId, item.link, effectiveMode)
+        row.rollBtn:Disable()
+    end)
+
+    -- Winner
+    row.winBtn:SetScript("OnClick", function()
+        if not SR.activeRoll then
+            SR.DPrint(SR.C_RED.."No active roll! Click Roll first."..SR.C_RESET)
+            return
+        end
+        if SR.activeRoll.uid ~= item.uid then
+            SR.DPrint(SR.C_RED.."Active roll is for: "..(SR.activeRoll.link or "?")..SR.C_RESET)
+            return
+        end
+        SR.StartCountdown()
+    end)
+
+    -- Trade
+    row.tradeBtn:SetScript("OnClick", function()
+        if not item.awardWinner then
+            SR.DPrint(SR.C_RED.."No winner for this item! Roll first."..SR.C_RESET)
+            return
+        end
+        SR.TryTradeItem(item.awardWinner, item.itemId, item.link, item.uid)
+        if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
+    end)
+
+    -- Bank
+    row.bankBtn:SetScript("OnClick", function()
+        if not SR.bankCharName then
+            SR.DPrint(SR.C_RED.."Set bank char: /sr bank <name>"..SR.C_RESET)
+            return
+        end
+        SR.TryTradeItem(SR.bankCharName, item.itemId, item.link, item.uid)
+        if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
+    end)
+
+    -- Diss
+    row.dissBtn:SetScript("OnClick", function()
+        if not SR.dissCharName then
+            SR.DPrint(SR.C_RED.."Set diss char: /sr diss <name>"..SR.C_RESET)
+            return
+        end
+        SR.TryTradeItem(SR.dissCharName, item.itemId, item.link, item.uid)
+        if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
+    end)
+end
+
+local function SetupRow(row, item, mode)
+    row.data = item
+    row.link = item.link
+    SR.SetupRowIcon(row, item)
+    SR.SetupRowItemText(row, item, mode)
+    SR.SetupRowStatusText(row, item)
+    SR.SetupRowButtonStates(row, item)
+    SR.SetupRowCallbacks(row, item, mode)
+    row:Show()
+end
+
+----------------------------------------------------------------------
+-- Trade timer display update (lightweight, no full rebuild)
+----------------------------------------------------------------------
+function SR.UpdateTradeTimerDisplays()
+    if not SR.mainFrame or not SR.mainFrame:IsShown() then return end
+    local now = GetTime()
+    local function UpdateRowTimer(row)
+        if not row:IsShown() or not row.data then return end
+        local item = row.data
+        if item.source == "bag" and item.tradeTime and item.tradeTimeScannedAt
+           and item.state ~= "AWARDED" then
+            local remaining = item.tradeTime - (now - item.tradeTimeScannedAt)
+            if remaining < 0 then remaining = 0 end
+            local totalMins = math.floor(remaining / 60)
+            local hours = math.floor(totalMins / 60)
+            local mins = totalMins - (hours * 60)
+            local timeStr = hours > 0 and (hours.."h "..mins.."m") or (mins.."m")
+            local tColor = SR.C_GREEN
+            if totalMins < 10 then tColor = SR.C_RED
+            elseif totalMins < 30 then tColor = SR.C_YELLOW end
+            row.tradeText:SetText(tColor..timeStr..SR.C_RESET)
+        end
+    end
+    for _, row in ipairs(SR.srRows) do UpdateRowTimer(row) end
+    for _, row in ipairs(SR.msRows) do UpdateRowTimer(row) end
+end
+
+----------------------------------------------------------------------
+-- Refresh main frame
+----------------------------------------------------------------------
+function SR.RefreshMainFrame()
+    if not SR.mainFrame then return end
+    SR.SyncItemUids()
+    for _, r in ipairs(SR.srRows) do r:Hide() end
+    for _, r in ipairs(SR.msRows) do r:Hide() end
+
+    local srItems = SR.GetVisibleSRItems()
+    local msItems = SR.GetMSRollItems()
+    local yOff, hdrH = 0, 22
+
+    -- SR header
+    SR.mainFrame.srHeader:ClearAllPoints()
+    SR.mainFrame.srHeader:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",5,-yOff)
+    if #srItems > 0 then
+        local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
+        SR.mainFrame.srHeader:SetText(SR.C_GREEN.."=== SOFT RESERVE - "..modeTag.." ("..#srItems..") ==="..SR.C_RESET)
+    else
+        SR.mainFrame.srHeader:SetText(SR.C_GRAY.."=== SOFT RESERVE (none visible) ==="..SR.C_RESET)
+    end
+    yOff = yOff + hdrH
+
+    for i, item in ipairs(srItems) do
+        local row = SR.srRows[i]
+        if not row then row = CreateRow(SR.mainFrame.content, SR.srRows, i, "sr") end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",0,-yOff)
+        row:SetPoint("RIGHT", SR.mainFrame.content,"RIGHT",0,0)
+        SetupRow(row, item, "sr")
+        yOff = yOff + (row.dynamicHeight or SR.ROW_HEIGHT)
+    end
+
+    yOff = yOff + 10
+
+    -- MS header
+    SR.mainFrame.msHeader:ClearAllPoints()
+    SR.mainFrame.msHeader:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",5,-yOff)
+    if #msItems > 0 then
+        local modeTag = SR.displayMode == "loot" and "LOOT" or "BAG"
+        SR.mainFrame.msHeader:SetText(SR.C_YELLOW.."=== ROLL - "..modeTag.." ("..#msItems..") ==="..SR.C_RESET)
+    else
+        SR.mainFrame.msHeader:SetText(SR.C_GRAY.."=== ROLL (none) ==="..SR.C_RESET)
+    end
+    yOff = yOff + hdrH
+
+    for i, item in ipairs(msItems) do
+        local row = SR.msRows[i]
+        if not row then row = CreateRow(SR.mainFrame.content, SR.msRows, i, "ms") end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", SR.mainFrame.content,"TOPLEFT",0,-yOff)
+        row:SetPoint("RIGHT", SR.mainFrame.content,"RIGHT",0,0)
+        SetupRow(row, item, "ms")
+        yOff = yOff + SR.MS_ROW_HEIGHT
+    end
+
+    SR.mainFrame.content:SetHeight(math.max(yOff+10, 1))
+
+    -- Status
+    local pc = 0
+    for _ in pairs(SR.reservesByName) do pc = pc + 1 end
+    local rs = ""
+    if SR.activeRoll then
+        rs = " | "..SR.C_ORANGE.."Rolling: "..(SR.activeRoll.link or "?")..
+             " ("..SR.activeRoll.mode:upper()..", "..#SR.activeRoll.rolls.." rolls)"..SR.C_RESET
+    end
+    local srStatus
+    if SR.importCount > 0 then
+        srStatus = SR.C_GREEN..SR.importCount..SR.C_WHITE.." SR | "..SR.C_GREEN..pc..SR.C_WHITE.." players"
+    else
+        srStatus = SR.C_GRAY.."No SR imported"
+    end
+    SR.mainFrame.statusText:SetText(srStatus..rs)
+    -- Bank/Diss display
+    if SR.mainFrame.bankText then
+        local bankStr = SR.bankCharName and (SR.C_CYAN..SR.bankCharName..SR.C_RESET) or (SR.C_RED.."not set"..SR.C_RESET)
+        local dissStr = SR.dissCharName and (SR.C_CYAN..SR.dissCharName..SR.C_RESET) or (SR.C_RED.."not set"..SR.C_RESET)
+        SR.mainFrame.bankText:SetText(SR.C_GRAY.."Bank: "..bankStr..SR.C_GRAY.." | Diss: "..dissStr)
+    end
+end
+
+----------------------------------------------------------------------
+-- Create main frame
+----------------------------------------------------------------------
+function SR.CreateMainFrame(silent)
+    if not SR.IsMasterLooter() then
+        if not silent then
+            SR.DPrint(SR.C_RED .. "You must be Master Looter to open this window." .. SR.C_RESET)
+        end
+        return
+    end
+    if SR.mainFrame then SR.mainFrame:Show(); SR.RefreshMainFrame(); return end
+
+    local f = CreateFrame("Frame","SRIMainFrame",UIParent)
+    f:SetSize(720,540)
+    f:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -10, -10)
+    f:SetBackdrop({
+        bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile=true, tileSize=32, edgeSize=32,
+        insets={left=8,right=8,top=8,bottom=8},
+    })
+    f:SetBackdropColor(0,0,0,0.94)
+    f:SetMovable(true); f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("DIALOG")
+    tinsert(UISpecialFrames,"SRIMainFrame")
+
+    local closeX = CreateFrame("Button",nil,f,"UIPanelCloseButton")
+    closeX:SetPoint("TOPRIGHT",-2,-2)
+
+    local t = f:CreateFontString(nil,"OVERLAY","GameFontNormalLarge")
+    t:SetPoint("TOP",0,-12)
+    t:SetText(SR.C_GREEN.."Sausage Roll"..SR.C_WHITE.." - SR Loot Tracker "..SR.C_GRAY.."v"..SR.VERSION..SR.C_RESET)
+
+    f.statusText = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    f.statusText:SetPoint("TOP",0,-30)
+
+    -- Rarity filter dropdown
+    local dd = CreateFrame("Frame", "SRIRarityDropdown", f, "UIDropDownMenuTemplate")
+    dd:SetPoint("TOPLEFT", -6, -14)
+    UIDropDownMenu_SetWidth(dd, 96)
+
+    local rarityOptions = {
+        {text="Green+",  value=2, r=0.12, g=1,    b=0},
+        {text="Blue+",   value=3, r=0,    g=0.44, b=0.87},
+        {text="Epic+",   value=4, r=0.64, g=0.21, b=0.93},
+    }
+
+    local function RarityDropdown_Init(self, level)
+        for _, opt in ipairs(rarityOptions) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = opt.text
+            info.colorCode = string.format("|cff%02x%02x%02x", opt.r*255, opt.g*255, opt.b*255)
+            info.value = opt.value
+            info.checked = (SR.minQualityFilter == opt.value)
+            info.func = function(btn)
+                SR.minQualityFilter = btn.value
+                UIDropDownMenu_SetSelectedValue(dd, btn.value)
+                UIDropDownMenu_SetText(dd, opt.text)
+                SR.RefreshMainFrame()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end
+
+    UIDropDownMenu_Initialize(dd, RarityDropdown_Init)
+    UIDropDownMenu_SetSelectedValue(dd, SR.minQualityFilter)
+    for _, opt in ipairs(rarityOptions) do
+        if opt.value == SR.minQualityFilter then
+            UIDropDownMenu_SetText(dd, opt.text)
+            break
+        end
+    end
+    f.rarityDropdown = dd
+
+    -- BoE checkbox
+    local boeCheck = CreateFrame("CheckButton", nil, f)
+    boeCheck:SetSize(20, 20)
+    boeCheck:SetPoint("LEFT", dd, "RIGHT", -2, 2)
+    boeCheck:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+    boeCheck:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+    boeCheck:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+    boeCheck:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    boeCheck:SetChecked(SR.showBoE)
+    boeCheck.label = boeCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    boeCheck.label:SetPoint("LEFT", boeCheck, "RIGHT", 2, 0)
+    boeCheck.label:SetText(SR.C_GREEN.."BoE")
+    boeCheck:SetScript("OnClick", function(self)
+        SR.showBoE = self:GetChecked()
+        SR.RefreshMainFrame()
+    end)
+    f.boeCheckbox = boeCheck
+
+    local sc = CreateFrame("ScrollFrame","SRIMainScroll",f,"UIPanelScrollFrameTemplate")
+    sc:SetPoint("TOPLEFT",10,-66)
+    sc:SetPoint("BOTTOMRIGHT",-30,62)
+    f.scroll = sc
+
+    local ct = CreateFrame("Frame",nil,sc)
+    ct:SetWidth(sc:GetWidth())
+    ct:SetHeight(1)
+    sc:SetScrollChild(ct)
+    f.content = ct
+
+    f.srHeader = ct:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    f.msHeader = ct:CreateFontString(nil,"OVERLAY","GameFontNormal")
+
+    -- Bottom buttons
+    local btn2 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btn2:SetSize(95,22); btn2:SetPoint("BOTTOMLEFT",10,36)
+    btn2:SetText("Import SR CSV")
+    btn2:SetScript("OnClick", function() SR.CreateImportFrame() end)
+
+    local btn3 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btn3:SetSize(110,22); btn3:SetPoint("BOTTOMLEFT",110,36)
+    btn3:SetText("Announce All SR")
+    btn3:SetScript("OnClick", function()
+        local items = SR.GetVisibleSRItems()
+        if #items == 0 then SR.DPrint(SR.C_YELLOW.."No SR items."..SR.C_RESET); return end
+        SR.SendRW("=== Soft Reserves ===")
+        for _, item in ipairs(items) do
+            local n = {}
+            for _, r in ipairs(item.reservers) do table.insert(n, r.name) end
+            SR.SendRW(item.link.." -> "..table.concat(n, ", "))
+        end
+    end)
+
+    -- Import HR CSV button
+    local btnHR = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnHR:SetSize(95,22); btnHR:SetPoint("BOTTOMLEFT",10,12)
+    btnHR:SetText("Import HR CSV")
+    btnHR:SetScript("OnClick", function() SR.CreateHRImportFrame() end)
+
+    -- Announce All HR button
+    local btnHRAnn = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnHRAnn:SetSize(110,22); btnHRAnn:SetPoint("BOTTOMLEFT",110,12)
+    btnHRAnn:SetText("Announce All HR")
+    btnHRAnn:SetScript("OnClick", function()
+        if #SR.hardReserves == 0 and #SR.hardReserveCustom == 0 then SR.DPrint(SR.C_YELLOW.."No HR items."..SR.C_RESET); return end
+        SR.SendRaid("=== Hard Reserves ===")
+        for _, hr in ipairs(SR.hardReserves) do
+            local _, link = GetItemInfo(hr.itemId)
+            SR.SendRaid(link or ("["..hr.itemName.."]"))
+        end
+        for _, line in ipairs(SR.hardReserveCustom) do
+            SR.SendRaid(line)
+        end
+    end)
+
+    local credit = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    credit:SetPoint("BOTTOM",0,10)
+    credit:SetText(SR.C_GRAY.."Sausage Roll - SR created by Sausage Party"..SR.C_RESET)
+
+    -- Set Bank button
+    local btnSetBank = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnSetBank:SetSize(90,22); btnSetBank:SetPoint("BOTTOM",-48,36)
+    btnSetBank:SetText("Set Bank")
+    btnSetBank:SetScript("OnClick", function(self)
+        local members = SR.GetGroupMembers()
+        local menuList = {}
+        for _, name in ipairs(members) do
+            table.insert(menuList, {
+                text = name,
+                checked = (SR.bankCharName and SR.bankCharName:lower() == name:lower()),
+                func = function()
+                    SR.bankCharName = name
+                    SausageRollImportDB.bankCharName = SR.bankCharName
+                    SR.DPrint(SR.C_GREEN.."Bank set to: "..SR.C_CYAN..SR.bankCharName..SR.C_RESET)
+                    SR.RefreshMainFrame()
+                end,
+            })
+        end
+        table.insert(menuList, {
+            text = "-- Clear --",
+            func = function()
+                SR.bankCharName = nil
+                SausageRollImportDB.bankCharName = nil
+                SR.DPrint(SR.C_YELLOW.."Bank char cleared."..SR.C_RESET)
+                SR.RefreshMainFrame()
+            end,
+        })
+        EasyMenu(menuList, SR.charDropdownFrame, self, 0, 0, "MENU")
+    end)
+
+    -- Set Diss button
+    local btnSetDiss = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnSetDiss:SetSize(90,22); btnSetDiss:SetPoint("BOTTOM",48,36)
+    btnSetDiss:SetText("Set Diss")
+    btnSetDiss:SetScript("OnClick", function(self)
+        local members = SR.GetGroupMembers()
+        local menuList = {}
+        for _, name in ipairs(members) do
+            table.insert(menuList, {
+                text = name,
+                checked = (SR.dissCharName and SR.dissCharName:lower() == name:lower()),
+                func = function()
+                    SR.dissCharName = name
+                    SausageRollImportDB.dissCharName = SR.dissCharName
+                    SR.DPrint(SR.C_GREEN.."Diss set to: "..SR.C_CYAN..SR.dissCharName..SR.C_RESET)
+                    SR.RefreshMainFrame()
+                end,
+            })
+        end
+        table.insert(menuList, {
+            text = "-- Clear --",
+            func = function()
+                SR.dissCharName = nil
+                SausageRollImportDB.dissCharName = nil
+                SR.DPrint(SR.C_YELLOW.."Diss char cleared."..SR.C_RESET)
+                SR.RefreshMainFrame()
+            end,
+        })
+        EasyMenu(menuList, SR.charDropdownFrame, self, 0, 0, "MENU")
+    end)
+
+    -- Grab All Loot to ML button
+    local btnGrab = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btnGrab:SetSize(120,22); btnGrab:SetPoint("TOPLEFT",10,-40)
+    btnGrab:SetText("Grab All Loot")
+    btnGrab:SetScript("OnClick", function()
+        if not SR.isLootOpen then
+            SR.DPrint(SR.C_RED.."No loot window open!"..SR.C_RESET)
+            return
+        end
+        if not SR.IsMasterLooter() then
+            SR.DPrint(SR.C_RED.."You are not Master Looter!"..SR.C_RESET)
+            return
+        end
+        local myName = UnitName("player")
+        local myCandIdx = nil
+        for ci = 1, 40 do
+            local cname = GetMasterLootCandidate(ci)
+            if not cname then break end
+            if cname:lower() == myName:lower() then
+                myCandIdx = ci
+                break
+            end
+        end
+        if not myCandIdx then
+            SR.DPrint(SR.C_RED.."Can't find self in loot candidates!"..SR.C_RESET)
+            return
+        end
+        local grabbed = {}
+        for li = GetNumLootItems(), 1, -1 do
+            local link = GetLootSlotLink(li)
+            if link then
+                GiveMasterLoot(li, myCandIdx)
+                table.insert(grabbed, link)
+            end
+        end
+        if #grabbed > 0 then
+            local channel = SR.IsInRaid() and "RAID" or "PARTY"
+            local msg = "Looted: "..grabbed[1]
+            for i = 2, #grabbed do
+                local appended = msg..", "..grabbed[i]
+                if #appended > 250 then
+                    SendChatMessage(msg, channel)
+                    msg = "Looted: "..grabbed[i]
+                else
+                    msg = appended
+                end
+            end
+            SendChatMessage(msg, channel)
+            SR.DPrint(SR.C_GREEN.."Grabbed "..#grabbed.." items to inventory."..SR.C_RESET)
+        else
+            SR.DPrint(SR.C_YELLOW.."No lootable items."..SR.C_RESET)
+        end
+    end)
+
+    -- Bank/Diss name display
+    local bankText = f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    bankText:SetPoint("BOTTOM", 0, 60)
+    f.bankText = bankText
+
+    local btn1 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btn1:SetSize(60,22); btn1:SetPoint("BOTTOMRIGHT",-10,36)
+    btn1:SetText("Refresh")
+    btn1:SetScript("OnClick", function() SR.RefreshMainFrame() end)
+
+    local btn4 = CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+    btn4:SetSize(60,22); btn4:SetPoint("BOTTOMRIGHT",-10,12)
+    btn4:SetText("Close")
+    btn4:SetScript("OnClick", function() f:Hide() end)
+
+    SR.mainFrame = f
+    SR.RefreshMainFrame()
+end
