@@ -42,6 +42,11 @@ SR.msRows = {}
 SR.rollRows = {}
 SR.clientRollRows = {}
 SR.uidRolled = {}
+SR.unclaimedAwards = {}   -- {[itemId] = {{winner, link}, ...}}
+SR.unclaimedRolled = {}   -- {[itemId] = count}
+SR.lootHistory = {}
+SR.showHistory = false
+SR.historyRows = {}
 
 -- Shared scalars (always read/write via SR.xxx)
 SR.importCount = 0

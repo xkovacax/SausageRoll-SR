@@ -145,6 +145,8 @@ function SR.ClearAllData()
     wipe(SR.uidAwards)
     wipe(SR.pendingOrphans)
     wipe(SR.uidRolled)
+    wipe(SR.unclaimedAwards)
+    wipe(SR.unclaimedRolled)
     SR.nextItemUid = 1
     SR.importCount = 0
     SR.activeRoll = nil
@@ -155,6 +157,8 @@ function SR.ClearAllData()
     SausageRollImportDB.reservesByName = {}
     SausageRollImportDB.importCount = 0
     SausageRollImportDB.lastSRText = nil
+    SausageRollImportDB.awards = nil
+    SausageRollImportDB.rolledItems = nil
 end
 
 function SR.ParseCSV(text)
@@ -255,6 +259,40 @@ function SR.ParseHRCSV(text)
 end
 
 ----------------------------------------------------------------------
+-- Loot history
+----------------------------------------------------------------------
+function SR.RecordLootHistory(itemId, link, name, quality, recipient, method)
+    local entry = {
+        itemId = itemId,
+        link = link,
+        name = name,
+        quality = quality,
+        recipient = recipient,
+        method = method,
+        timestamp = time(),
+    }
+    table.insert(SR.lootHistory, entry)
+    if not SausageRollImportDB.lootHistory then SausageRollImportDB.lootHistory = {} end
+    table.insert(SausageRollImportDB.lootHistory, entry)
+end
+
+function SR.ClearLootHistory()
+    wipe(SR.lootHistory)
+    SausageRollImportDB.lootHistory = nil
+end
+
+function SR.ExportLootHistoryCSV()
+    local lines = {"Item,ItemID,Recipient,Method,Date"}
+    for _, e in ipairs(SR.lootHistory) do
+        local d = date("%d.%m.%Y %H:%M", e.timestamp)
+        local safeName = (e.name or ""):gsub('"', '""')
+        table.insert(lines, string.format('"%s",%d,"%s","%s","%s"',
+            safeName, e.itemId or 0, e.recipient or "", e.method or "", d))
+    end
+    return table.concat(lines, "\n")
+end
+
+----------------------------------------------------------------------
 -- Load saved data (ADDON_LOADED) — copy INTO existing tables
 ----------------------------------------------------------------------
 function SR.LoadSavedData()
@@ -277,6 +315,89 @@ function SR.LoadSavedData()
     if db.hardReserveCustom then
         wipe(SR.hardReserveCustom)
         for i, v in ipairs(db.hardReserveCustom) do SR.hardReserveCustom[i] = v end
+    end
+    if db.awards then
+        wipe(SR.awardLog)
+        for i, v in ipairs(db.awards) do SR.awardLog[i] = v end
+    end
+    if db.lootHistory then
+        wipe(SR.lootHistory)
+        for i, v in ipairs(db.lootHistory) do SR.lootHistory[i] = v end
+    end
+    SR.BuildClaimQueues()
+end
+
+----------------------------------------------------------------------
+-- Claim system — persist awards/rolled across /reload
+----------------------------------------------------------------------
+function SR.BuildClaimQueues()
+    wipe(SR.unclaimedAwards)
+    wipe(SR.unclaimedRolled)
+    for _, entry in ipairs(SR.awardLog) do
+        local id = entry.itemId
+        if not SR.unclaimedAwards[id] then SR.unclaimedAwards[id] = {} end
+        table.insert(SR.unclaimedAwards[id], {winner=entry.winner, link=entry.link})
+    end
+    local db = SausageRollImportDB
+    if db.rolledItems then
+        for _, entry in ipairs(db.rolledItems) do
+            local id = entry.itemId
+            SR.unclaimedRolled[id] = (SR.unclaimedRolled[id] or 0) + 1
+        end
+    end
+end
+
+function SR.ClaimAward(itemId)
+    local queue = SR.unclaimedAwards[itemId]
+    if not queue or #queue == 0 then return nil end
+    return table.remove(queue, 1)
+end
+
+function SR.ClaimRolled(itemId)
+    local count = SR.unclaimedRolled[itemId]
+    if not count or count <= 0 then return false end
+    SR.unclaimedRolled[itemId] = count - 1
+    return true
+end
+
+function SR.PersistAward(itemId, winner, link)
+    local db = SausageRollImportDB
+    if not db.awards then db.awards = {} end
+    table.insert(db.awards, {itemId=itemId, winner=winner, link=link})
+    -- Item is now awarded, remove one matching rolledItems entry
+    if db.rolledItems then
+        for i, entry in ipairs(db.rolledItems) do
+            if entry.itemId == itemId then
+                table.remove(db.rolledItems, i)
+                break
+            end
+        end
+    end
+end
+
+function SR.PersistRolled(itemId)
+    local db = SausageRollImportDB
+    if not db.rolledItems then db.rolledItems = {} end
+    table.insert(db.rolledItems, {itemId=itemId})
+end
+
+function SR.RemovePersistedState(itemId)
+    local db = SausageRollImportDB
+    if db.awards then
+        for i, entry in ipairs(db.awards) do
+            if entry.itemId == itemId then
+                table.remove(db.awards, i)
+                break
+            end
+        end
+    end
+    if db.rolledItems then
+        for i, entry in ipairs(db.rolledItems) do
+            if entry.itemId == itemId then
+                table.remove(db.rolledItems, i)
+                break
+            end
+        end
     end
 end
 
