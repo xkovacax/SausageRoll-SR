@@ -301,8 +301,12 @@ function SR.SetupRowCallbacks(row, item, mode)
             return
         end
         SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
-            item.awardWinner, mode == "sr" and "SR" or "ROLL")
-        SR.TryTradeItem(item.awardWinner, item.itemId, item.link, item.uid)
+            item.awardWinner, mode == "sr" and "SR" or "ROLL", item.uid)
+        if item.awardWinner:lower() == UnitName("player"):lower() then
+            SR.DPrint(SR.C_GREEN.."Claimed: "..(item.link or "?")..SR.C_RESET)
+        else
+            SR.TryTradeItem(item.awardWinner, item.itemId, item.link, item.uid)
+        end
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
 
@@ -313,7 +317,7 @@ function SR.SetupRowCallbacks(row, item, mode)
             return
         end
         SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
-            SR.bankCharName, "BANK")
+            SR.bankCharName, "BANK", item.uid)
         SR.TryTradeItem(SR.bankCharName, item.itemId, item.link, item.uid)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
@@ -325,7 +329,7 @@ function SR.SetupRowCallbacks(row, item, mode)
             return
         end
         SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
-            SR.dissCharName, "DISS")
+            SR.dissCharName, "DISS", item.uid)
         SR.TryTradeItem(SR.dissCharName, item.itemId, item.link, item.uid)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)

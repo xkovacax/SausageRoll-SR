@@ -261,7 +261,24 @@ end
 ----------------------------------------------------------------------
 -- Loot history
 ----------------------------------------------------------------------
-function SR.RecordLootHistory(itemId, link, name, quality, recipient, method)
+function SR.RecordLootHistory(itemId, link, name, quality, recipient, method, uid)
+    -- Replace previous entry for same UID (prevents duplicates on retry)
+    if uid then
+        for i = #SR.lootHistory, 1, -1 do
+            if SR.lootHistory[i].uid == uid then
+                table.remove(SR.lootHistory, i)
+                break
+            end
+        end
+        if SausageRollImportDB.lootHistory then
+            for i = #SausageRollImportDB.lootHistory, 1, -1 do
+                if SausageRollImportDB.lootHistory[i].uid == uid then
+                    table.remove(SausageRollImportDB.lootHistory, i)
+                    break
+                end
+            end
+        end
+    end
     local entry = {
         itemId = itemId,
         link = link,
@@ -270,6 +287,7 @@ function SR.RecordLootHistory(itemId, link, name, quality, recipient, method)
         recipient = recipient,
         method = method,
         timestamp = time(),
+        uid = uid,
     }
     table.insert(SR.lootHistory, entry)
     if not SausageRollImportDB.lootHistory then SausageRollImportDB.lootHistory = {} end
