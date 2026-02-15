@@ -50,8 +50,17 @@ function SR.CreateMinimapButton()
             SR.displayMode = "bag"
             SR.CreateMainFrame()
         elseif button=="RightButton" then
-            SR.displayMode = "bag"
-            SR.CreateMainFrame()
+            if SR.IsMasterLooter() then
+                if SR.activeRoll or SR.finishedRoll then
+                    SR.CreateRollWindow()
+                    SR.RefreshRollWindow()
+                end
+            else
+                if SR.clientRoll then
+                    SR.CreateClientRollWindow()
+                    SR.RefreshClientRollWindow()
+                end
+            end
         end
     end)
     btn:SetScript("OnEnter", function(self)
@@ -67,7 +76,7 @@ function SR.CreateMinimapButton()
         end
         if SR.activeRoll then GameTooltip:AddLine(SR.C_ORANGE.."Roll active!",1,1,1) end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(SR.C_YELLOW.."LClick:"..SR.C_WHITE.." Main | "..SR.C_YELLOW.."RClick:"..SR.C_WHITE.." Import",1,1,1)
+        GameTooltip:AddLine(SR.C_YELLOW.."LClick:"..SR.C_WHITE.." Main | "..SR.C_YELLOW.."RClick:"..SR.C_WHITE.." Active Roll",1,1,1)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
