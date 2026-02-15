@@ -189,6 +189,7 @@ SRI:RegisterEvent("TRADE_SHOW")
 SRI:RegisterEvent("TRADE_ACCEPT_UPDATE")
 SRI:RegisterEvent("TRADE_CLOSED")
 SRI:RegisterEvent("CHAT_MSG_ADDON")
+SRI:RegisterEvent("CHAT_MSG_LOOT")
 
 local tradeCloseFrame
 SRI:SetScript("OnEvent", function(self, event, ...)
@@ -223,6 +224,10 @@ SRI:SetScript("OnEvent", function(self, event, ...)
         if msg then SR.OnSystemMsg(msg) end
     elseif event == "CHAT_MSG_ADDON" then
         SR.OnSyncMessage(...)
+    elseif event == "CHAT_MSG_LOOT" then
+        if SR.mainFrame and SR.mainFrame:IsShown() then
+            SR.RefreshMainFrame()
+        end
     elseif event == "TRADE_SHOW" then
         if SR.pendingTrade then
             local pt = SR.pendingTrade

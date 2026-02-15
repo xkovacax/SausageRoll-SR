@@ -144,6 +144,7 @@ function SR.ClearAllData()
     wipe(SR.uidToItemId)
     wipe(SR.uidAwards)
     wipe(SR.pendingOrphans)
+    wipe(SR.uidRolled)
     SR.nextItemUid = 1
     SR.importCount = 0
     SR.activeRoll = nil

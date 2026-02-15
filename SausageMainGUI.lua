@@ -209,15 +209,35 @@ function SR.SetupRowItemText(row, item, mode)
 end
 
 function SR.SetupRowStatusText(row, item)
-    if item.state == "AWARDED" then
+    if item.state == "ROLLING" then
+        row.srcText:SetText(SR.C_YELLOW.."ROLLING"..SR.C_RESET)
+        row.tradeText:SetText(SR.C_YELLOW.."in progress..."..SR.C_RESET)
+    elseif item.state == "AWARDED" then
         row.srcText:SetText(SR.C_GREEN.."AWARDED"..SR.C_RESET)
         row.tradeText:SetText(SR.C_CYAN.."-> "..item.awardWinner..SR.C_RESET)
-    elseif item.source == "loot" then
+    elseif item.state == "ROLLED" then
+        row.srcText:SetText(SR.C_GRAY.."ROLLED"..SR.C_RESET)
+        if item.source == "loot" then
+            row.tradeText:SetText(SR.C_GREEN.."LOOT"..SR.C_RESET)
+        elseif item.tradeTime then
+            local totalMins = math.floor(item.tradeTime / 60)
+            local hours = math.floor(totalMins / 60)
+            local mins = totalMins - (hours * 60)
+            local timeStr = hours > 0 and (hours.."h "..mins.."m") or (mins.."m")
+            local tColor = SR.C_GREEN
+            if totalMins < 10 then tColor = SR.C_RED
+            elseif totalMins < 30 then tColor = SR.C_YELLOW end
+            row.tradeText:SetText(tColor..timeStr..SR.C_RESET)
+        elseif item.isBoE then
+            row.tradeText:SetText(SR.C_GREEN.."BoE"..SR.C_RESET)
+        else
+            row.tradeText:SetText(SR.C_GRAY.."BAG"..SR.C_RESET)
+        end
+    else -- HOLD
         row.srcText:SetText(SR.C_ORANGE.."HOLD"..SR.C_RESET)
-        row.tradeText:SetText(SR.C_GREEN.."LOOT"..SR.C_RESET)
-    else
-        row.srcText:SetText(SR.C_ORANGE.."HOLD"..SR.C_RESET)
-        if item.tradeTime then
+        if item.source == "loot" then
+            row.tradeText:SetText(SR.C_GREEN.."LOOT"..SR.C_RESET)
+        elseif item.tradeTime then
             local totalMins = math.floor(item.tradeTime / 60)
             local hours = math.floor(totalMins / 60)
             local mins = totalMins - (hours * 60)
@@ -235,16 +255,15 @@ function SR.SetupRowStatusText(row, item)
 end
 
 function SR.SetupRowButtonStates(row, item)
-    local hasRoll = (SR.activeRoll and SR.activeRoll.uid == item.uid) or (SR.finishedRoll and SR.finishedRoll.uid == item.uid)
-    if item.state == "AWARDED" or hasRoll then
+    if item.state == "ROLLING" or item.state == "AWARDED" or item.state == "ROLLED" then
         row.rollBtn:Disable()
     else
         row.rollBtn:Enable()
     end
-    if item.state == "AWARDED" or (SR.finishedRoll and SR.finishedRoll.uid == item.uid) then
-        row.winBtn:Disable()
-    else
+    if item.state == "ROLLING" and SR.activeRoll then
         row.winBtn:Enable()
+    else
+        row.winBtn:Disable()
     end
     if item.awardWinner then
         row.tradeBtn:Enable()
@@ -259,6 +278,7 @@ function SR.SetupRowCallbacks(row, item, mode)
         row.resetBtn:SetScript("OnClick", function()
             if item.uid then
                 SR.uidAwards[item.uid] = nil
+                SR.uidRolled[item.uid] = nil
             end
             if SR.activeRoll and SR.activeRoll.uid == item.uid then
                 SR.SendSync("RX")
@@ -345,7 +365,7 @@ function SR.UpdateTradeTimerDisplays()
         if not row:IsShown() or not row.data then return end
         local item = row.data
         if item.source == "bag" and item.tradeTime and item.tradeTimeScannedAt
-           and item.state ~= "AWARDED" then
+           and item.state ~= "AWARDED" and item.state ~= "ROLLING" then
             local remaining = item.tradeTime - (now - item.tradeTimeScannedAt)
             if remaining < 0 then remaining = 0 end
             local totalMins = math.floor(remaining / 60)
