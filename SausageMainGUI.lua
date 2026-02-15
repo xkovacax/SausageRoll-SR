@@ -319,7 +319,7 @@ function SR.SetupRowCallbacks(row, item, mode)
         end
         SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
             SR.bankCharName, "BANK", item.uid)
-        SR.TryTradeItem(SR.bankCharName, item.itemId, item.link, item.uid)
+        SR.TryTradeItem(SR.bankCharName, item.itemId, item.link, item.uid, true)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
 
@@ -331,7 +331,7 @@ function SR.SetupRowCallbacks(row, item, mode)
         end
         SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
             SR.dissCharName, "DISS", item.uid)
-        SR.TryTradeItem(SR.dissCharName, item.itemId, item.link, item.uid)
+        SR.TryTradeItem(SR.dissCharName, item.itemId, item.link, item.uid, true)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
 
