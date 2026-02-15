@@ -56,12 +56,14 @@ function SR.MasterLootTo(lootIdx, targetName, itemId, itemLink)
     return false
 end
 
-function SR.InitiateTradeWith(targetName, bag, slot, itemId, itemLink)
+function SR.InitiateTradeWith(targetName, bag, slot, itemId, itemLink, silent)
     local uid = SR.GetUnitIdByName(targetName)
     if not uid then
-        local myName = UnitName("player") or "me"
-        SR.SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
-        SR.DPrint(SR.C_YELLOW..targetName.." not found in group. Announced in RW."..SR.C_RESET)
+        if not silent then
+            local myName = UnitName("player") or "me"
+            SR.SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
+        end
+        SR.DPrint(SR.C_YELLOW..targetName.." not found in group."..SR.C_RESET)
         return
     end
     if CheckInteractDistance(uid, 2) then
@@ -69,13 +71,15 @@ function SR.InitiateTradeWith(targetName, bag, slot, itemId, itemLink)
         InitiateTrade(uid)
         SR.DPrint(SR.C_GREEN.."Trading "..(itemLink or "item").." to "..targetName.."..."..SR.C_RESET)
     else
-        local myName = UnitName("player") or "me"
-        SR.SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
-        SR.DPrint(SR.C_YELLOW..targetName.." out of range. Announced in RW."..SR.C_RESET)
+        if not silent then
+            local myName = UnitName("player") or "me"
+            SR.SendRW((itemLink or "Item").." -> "..targetName.." trade "..myName)
+        end
+        SR.DPrint(SR.C_YELLOW..targetName.." out of range."..SR.C_RESET)
     end
 end
 
-function SR.TryTradeItem(targetName, itemId, itemLink, itemUid)
+function SR.TryTradeItem(targetName, itemId, itemLink, itemUid, silent)
     if not targetName or targetName == "" then
         SR.DPrint(SR.C_RED.."No target name!"..SR.C_RESET)
         return
@@ -93,5 +97,5 @@ function SR.TryTradeItem(targetName, itemId, itemLink, itemUid)
         return
     end
 
-    SR.InitiateTradeWith(targetName, bag, slot, itemId, itemLink)
+    SR.InitiateTradeWith(targetName, bag, slot, itemId, itemLink, silent)
 end
