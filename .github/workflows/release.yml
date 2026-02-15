@@ -25,7 +25,7 @@ jobs:
       - name: Update versions in project
         run: |
           sed -i "s/^## Version: .*/## Version: ${{ steps.version.outputs.version }}/" SausageRoll-SR.toc
-          sed -i 's/^local SR_VERSION = .*/local SR_VERSION = "${{ steps.version.outputs.version }}"/' SausageRoll-SR.lua
+          sed -i 's/^SR.VERSION = .*/SR.VERSION = "${{ steps.version.outputs.version }}"/' SausageCore.lua
 
       - name: Commit version update
         run: |
@@ -40,7 +40,7 @@ jobs:
       - name: Package addon zip
         run: |
           mkdir -p SausageRoll-SR
-          cp -r SausageRoll-SR.toc SausageRoll-SR.lua Sounds/ Textures/ SausageRoll-SR/
+          cp -r SausageRoll-SR.toc *.lua Sounds/ Textures/ SausageRoll-SR/
           zip -r SausageRoll-SR.zip SausageRoll-SR/
 
       - name: Create GitHub Release
