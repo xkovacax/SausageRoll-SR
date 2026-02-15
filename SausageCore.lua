@@ -5,7 +5,7 @@ SausageRollNS = {}
 local SR = SausageRollNS
 
 SR.ADDON_NAME = "SausageRoll-SR"
-SR.VERSION = "1.3.0"
+SR.VERSION = "2.0.2"
 SR.SR_DEBUG = false
 
 -- Color constants
