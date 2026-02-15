@@ -206,3 +206,29 @@ function SR.GetGroupMembers()
     table.sort(members)
     return members
 end
+
+function SR.GetPlayerClass(name)
+    if not name then return nil end
+    local low = name:lower()
+    if SR.IsInRaid() then
+        for i = 1, GetNumRaidMembers() do
+            local rName, _, _, _, _, classFile = GetRaidRosterInfo(i)
+            if rName and rName:lower() == low then
+                return classFile
+            end
+        end
+    else
+        if UnitName("player") and UnitName("player"):lower() == low then
+            local _, classFile = UnitClass("player")
+            return classFile
+        end
+        for i = 1, GetNumPartyMembers() do
+            local pName = UnitName("party"..i)
+            if pName and pName:lower() == low then
+                local _, classFile = UnitClass("party"..i)
+                return classFile
+            end
+        end
+    end
+    return nil
+end

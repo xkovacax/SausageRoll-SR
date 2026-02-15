@@ -9,11 +9,11 @@ local SR = SausageRollNS
 local function GetRollRow(idx)
     if not SR.rollRows[idx] then
         local row = CreateFrame("Frame", nil, SR.rollFrame.content)
-        row:SetHeight(16)
+        row:SetHeight(26)
 
         local btn = CreateFrame("Button", nil, row)
         btn:SetSize(14, 14)
-        btn:SetPoint("LEFT", 0, 0)
+        btn:SetPoint("LEFT", 0, 4)
         btn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8"})
         btn:SetBackdropColor(0, 0, 0, 0.6)
         local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -29,9 +29,14 @@ local function GetRollRow(idx)
 
         local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         fs:SetJustifyH("LEFT")
-        fs:SetPoint("LEFT", 18, 0)
+        fs:SetPoint("TOPLEFT", row, "TOPLEFT", 18, 0)
         fs:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         row.text = fs
+
+        local classFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        classFs:SetJustifyH("LEFT")
+        classFs:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -1)
+        row.classText = classFs
 
         table.insert(SR.rollRows, row)
     end
@@ -106,7 +111,7 @@ function SR.RefreshRollWindow()
     local validRolls, excludedRolls, invalidRolls = SR.CategorizeRolls(rolls)
 
     -- Hide old rows
-    for _, row in ipairs(SR.rollRows) do row.text:SetText(""); row:Hide() end
+    for _, row in ipairs(SR.rollRows) do row.text:SetText(""); row.classText:SetText(""); row:Hide() end
 
     local maxShow = 20
     local yOff = 0
@@ -136,6 +141,15 @@ function SR.RefreshRollWindow()
         local posColor = i == 1 and SR.C_GREEN or SR.C_WHITE
         row.text:SetText(posColor..i..". "..SR.C_CYAN..r.name..SR.C_WHITE.." - "..r.roll..srTag..SR.C_RESET)
 
+        local classFile = SR.GetPlayerClass(r.name)
+        if classFile then
+            local cc = RAID_CLASS_COLORS[classFile]
+            local hex = cc and string.format("|cff%02x%02x%02x", cc.r*255, cc.g*255, cc.b*255) or SR.C_GRAY
+            row.classText:SetText(hex..classFile..SR.C_RESET)
+        else
+            row.classText:SetText("")
+        end
+
         if isActive then
             row.excludeBtn.rollData = r
             row.excludeBtnText:SetText(SR.C_RED.."X"..SR.C_RESET)
@@ -144,7 +158,7 @@ function SR.RefreshRollWindow()
             row.excludeBtn:Hide()
         end
         row:Show()
-        yOff = yOff + 16
+        yOff = yOff + 26
     end
 
     -- Display excluded rolls
@@ -158,6 +172,15 @@ function SR.RefreshRollWindow()
 
         row.text:SetText(SR.C_GRAY..r.name.." - "..r.roll.." [EXCLUDED]"..SR.C_RESET)
 
+        local classFile = SR.GetPlayerClass(r.name)
+        if classFile then
+            local cc = RAID_CLASS_COLORS[classFile]
+            local hex = cc and string.format("|cff%02x%02x%02x", cc.r*255, cc.g*255, cc.b*255) or SR.C_GRAY
+            row.classText:SetText(hex..classFile..SR.C_RESET)
+        else
+            row.classText:SetText("")
+        end
+
         if isActive then
             row.excludeBtn.rollData = r
             row.excludeBtnText:SetText(SR.C_GREEN.."+"..SR.C_RESET)
@@ -166,7 +189,7 @@ function SR.RefreshRollWindow()
             row.excludeBtn:Hide()
         end
         row:Show()
-        yOff = yOff + 16
+        yOff = yOff + 26
     end
 
     -- Display invalid rolls
@@ -179,9 +202,19 @@ function SR.RefreshRollWindow()
         row:SetPoint("RIGHT", SR.rollFrame.content, "RIGHT", -6, 0)
 
         row.text:SetText(SR.C_GRAY.."  x "..r.name.." - "..r.roll.." (not eligible)"..SR.C_RESET)
+
+        local classFile = SR.GetPlayerClass(r.name)
+        if classFile then
+            local cc = RAID_CLASS_COLORS[classFile]
+            local hex = cc and string.format("|cff%02x%02x%02x", cc.r*255, cc.g*255, cc.b*255) or SR.C_GRAY
+            row.classText:SetText(hex..classFile..SR.C_RESET)
+        else
+            row.classText:SetText("")
+        end
+
         row.excludeBtn:Hide()
         row:Show()
-        yOff = yOff + 16
+        yOff = yOff + 26
     end
 
     -- "Waiting" message if no rolls
@@ -192,9 +225,10 @@ function SR.RefreshRollWindow()
         row:SetPoint("TOPLEFT", SR.rollFrame.content, "TOPLEFT", 6, 0)
         row:SetPoint("RIGHT", SR.rollFrame.content, "RIGHT", -6, 0)
         row.text:SetText(SR.C_GRAY.."Waiting for /roll ..."..SR.C_RESET)
+        row.classText:SetText("")
         row.excludeBtn:Hide()
         row:Show()
-        yOff = 16
+        yOff = 26
     end
 
     SR.rollFrame.content:SetHeight(math.max(yOff + 4, 1))
