@@ -65,6 +65,7 @@ function SR.OnSyncMessage(prefix, msg, channel, sender)
             finished = false,
         }
         SR.clientAutoHideTimer = nil
+        SR.clientRollClicked = nil
         SR.CreateClientRollWindow()
         SR.RefreshClientRollWindow()
 
@@ -87,6 +88,7 @@ function SR.OnSyncMessage(prefix, msg, channel, sender)
             name = parts[2],
             roll = tonumber(parts[3]) or 0,
             valid = parts[4] == "1",
+            spec = parts[5] or "ms",
         })
         SR.RefreshClientRollWindow()
 
@@ -99,9 +101,12 @@ function SR.OnSyncMessage(prefix, msg, channel, sender)
         if not SR.clientRoll then return end
         local winnerName = parts[2]
         local winnerRoll = tonumber(parts[3]) or 0
+        local winnerSpec = parts[4]
+        if winnerSpec == "" then winnerSpec = nil end
         if winnerName and winnerName ~= "" then
             SR.clientRoll.winner = winnerName
             SR.clientRoll.winnerRoll = winnerRoll
+            SR.clientRoll.winnerSpec = winnerSpec
         end
         SR.clientRoll.finished = true
         SR.clientRoll.countdown = nil

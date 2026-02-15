@@ -59,6 +59,7 @@ SR.dissCharName = nil
 SR.nextItemUid = 1
 SR.clientRoll = nil
 SR.clientAutoHideTimer = nil
+SR.clientRollClicked = nil  -- "ms"/"os"/nil; reset on new RS sync
 
 -- Frame references
 SR.mainFrame = nil

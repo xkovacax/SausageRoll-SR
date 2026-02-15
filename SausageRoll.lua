@@ -23,7 +23,7 @@ function SR.StartRoll(uid, itemId, link, mode)
             SR.SendRW(link.." SR: "..table.concat(names, ", ").." - /roll!")
         end
     else
-        SR.SendRW(link.." "..mode:upper().." - /roll!")
+        SR.SendRW(link.."  MS - /roll  ||||  OS - /roll 99")
     end
     SR.DPrint(SR.C_GREEN.."Roll started: "..link.." ("..mode:upper()..")"..SR.C_RESET)
     SR.CreateRollWindow()
@@ -54,8 +54,10 @@ end
 ----------------------------------------------------------------------
 function SR.ParseRollMessage(msg)
     local name, roll = msg:match("(.+) rolls (%d+) %(1%-100%)")
-    if not name or not roll then return nil, nil end
-    return name, tonumber(roll)
+    if name and roll then return name, tonumber(roll), "ms" end
+    name, roll = msg:match("(.+) rolls (%d+) %(1%-99%)")
+    if name and roll then return name, tonumber(roll), "os" end
+    return nil, nil, nil
 end
 
 function SR.CountPlayerRolls(name)
@@ -84,7 +86,7 @@ function SR.GetAllowedRolls(name, itemId, mode)
     end
 end
 
-function SR.ValidateRoll(name, roll)
+function SR.ValidateRoll(name, roll, spec)
     if not SR.activeRoll then return "ignored", "no active roll" end
 
     local mode = SR.activeRoll.mode
@@ -93,6 +95,9 @@ function SR.ValidateRoll(name, roll)
     local allowedRolls = SR.GetAllowedRolls(name, itemId, mode)
 
     if mode == "sr" then
+        if spec == "os" then
+            return "silent", "OS roll during SR"
+        end
         if allowedRolls == 0 then
             return "invalid", "not an SR holder"
         end
@@ -102,30 +107,32 @@ function SR.ValidateRoll(name, roll)
         return "valid", nil
     else
         if existingCount >= 1 then
-            return "ignored", "already rolled (MS)"
+            return "ignored", "already rolled"
         end
         return "valid", nil
     end
 end
 
-function SR.RecordRoll(name, roll, status)
+function SR.RecordRoll(name, roll, status, spec)
     if not SR.activeRoll then return end
     if status == "invalid" then
-        table.insert(SR.activeRoll.rolls, {name=name, roll=roll, valid=false})
-        SR.SendSync("RU", name, roll, "0")
+        table.insert(SR.activeRoll.rolls, {name=name, roll=roll, valid=false, spec=spec})
+        SR.SendSync("RU", name, roll, "0", spec)
     elseif status == "valid" then
-        table.insert(SR.activeRoll.rolls, {name=name, roll=roll, valid=true})
-        SR.SendSync("RU", name, roll, "1")
+        table.insert(SR.activeRoll.rolls, {name=name, roll=roll, valid=true, spec=spec})
+        SR.SendSync("RU", name, roll, "1", spec)
     end
-    -- "ignored" = don't record at all
+    -- "ignored"/"silent" = don't record at all
 end
 
 function SR.OnSystemMsg(msg)
     if not SR.activeRoll then return end
-    local name, roll = SR.ParseRollMessage(msg)
+    local name, roll, spec = SR.ParseRollMessage(msg)
     if not name or not roll then return end
 
-    local status, reason = SR.ValidateRoll(name, roll)
+    local status, reason = SR.ValidateRoll(name, roll, spec)
+
+    if status == "silent" then return end
 
     if status == "ignored" then
         local mode = SR.activeRoll.mode
@@ -134,21 +141,21 @@ function SR.OnSystemMsg(msg)
             local existingCount = SR.CountPlayerRolls(name)
             SendChatMessage(name.." - your roll was IGNORED! You have "..allowedRolls.."x SR = "..allowedRolls.." roll(s) allowed. You already rolled "..existingCount.."x.", "WHISPER", nil, name)
         else
-            SendChatMessage(name.." - your extra roll was IGNORED! Only 1 roll allowed for MS.", "WHISPER", nil, name)
+            SendChatMessage(name.." - your extra roll was IGNORED! Only 1 roll allowed (MS or OS, not both).", "WHISPER", nil, name)
         end
         SR.DPrint(SR.C_RED..name.." "..reason.." - ignored"..SR.C_RESET)
         SR.RefreshRollWindow()
         return
     end
 
-    SR.RecordRoll(name, roll, status)
+    SR.RecordRoll(name, roll, status, spec)
     SR.RefreshRollWindow()
 end
 
 ----------------------------------------------------------------------
 -- Winner determination
 ----------------------------------------------------------------------
-function SR.GetValidRolls(rolls, mode, itemId)
+function SR.GetValidRolls(rolls, mode, itemId, filterSpec)
     local filtered = {}
     if mode == "sr" then
         local entries = SR.reserves[itemId] or {}
@@ -165,7 +172,9 @@ function SR.GetValidRolls(rolls, mode, itemId)
     else
         for _, roll in ipairs(rolls) do
             if roll.valid ~= false and not roll.excluded then
-                table.insert(filtered, roll)
+                if not filterSpec or roll.spec == filterSpec then
+                    table.insert(filtered, roll)
+                end
             end
         end
     end
@@ -189,8 +198,8 @@ function SR.AnnounceWinnerFinal()
 
     if #r.rolls == 0 then
         SR.SendRW(r.link.." - No rolls!")
-        SR.SendSync("RE", "", 0)
-        SR.finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=nil}
+        SR.SendSync("RE", "", 0, "")
+        SR.finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=nil, winnerSpec=nil}
         SR.activeRoll = nil
         SR.countdownTimer = nil
         SR.RefreshRollWindow()
@@ -198,15 +207,34 @@ function SR.AnnounceWinnerFinal()
         return
     end
 
-    local validRolls = SR.GetValidRolls(r.rolls, r.mode, r.itemId)
-    local winner = SR.DetermineWinner(validRolls)
+    local winner, winnerSpec
     local winnerName = nil
+
+    if r.mode == "sr" then
+        local validRolls = SR.GetValidRolls(r.rolls, r.mode, r.itemId)
+        winner = SR.DetermineWinner(validRolls)
+    else
+        -- MS priority: try MS rolls first, then OS
+        local msRolls = SR.GetValidRolls(r.rolls, r.mode, r.itemId, "ms")
+        winner = SR.DetermineWinner(msRolls)
+        if winner then
+            winnerSpec = "ms"
+        else
+            local osRolls = SR.GetValidRolls(r.rolls, r.mode, r.itemId, "os")
+            winner = SR.DetermineWinner(osRolls)
+            if winner then winnerSpec = "os" end
+        end
+    end
 
     if not winner then
         SR.SendRW(r.link.." - No valid rolls!")
     else
         winnerName = winner.name
-        SR.SendRW(r.link.." >> "..winner.name.." wins ("..winner.roll..")")
+        if winnerSpec then
+            SR.SendRW(r.link.." >> "..winner.name.." wins "..winnerSpec:upper().." ("..winner.roll..")")
+        else
+            SR.SendRW(r.link.." >> "..winner.name.." wins ("..winner.roll..")")
+        end
         SR.RecordAward(r.uid, r.itemId, r.link, winnerName)
     end
 
@@ -225,12 +253,12 @@ function SR.AnnounceWinnerFinal()
                 if roll.roll > winRoll then winRoll = roll.roll end
             end
         end
-        SR.SendSync("RE", winnerName, winRoll)
+        SR.SendSync("RE", winnerName, winRoll, winnerSpec or "")
     else
-        SR.SendSync("RE", "", 0)
+        SR.SendSync("RE", "", 0, "")
     end
 
-    SR.finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=winnerName}
+    SR.finishedRoll = {uid=r.uid, itemId=r.itemId, link=r.link, mode=r.mode, rolls=r.rolls, winner=winnerName, winnerSpec=winnerSpec}
     SR.activeRoll = nil
     SR.countdownTimer = nil
     SR.RefreshRollWindow()
