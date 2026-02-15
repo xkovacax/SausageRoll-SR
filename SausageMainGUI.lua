@@ -725,13 +725,14 @@ function SR.CreateMainFrame(silent)
     btn3:SetSize(110,22); btn3:SetPoint("BOTTOMLEFT",110,36)
     btn3:SetText("Announce All SR")
     btn3:SetScript("OnClick", function()
-        local items = SR.GetVisibleSRItems()
-        if #items == 0 then SR.DPrint(SR.C_YELLOW.."No SR items."..SR.C_RESET); return end
-        SR.SendRW("=== Soft Reserves ===")
-        for _, item in ipairs(items) do
-            local n = {}
-            for _, r in ipairs(item.reservers) do table.insert(n, r.name) end
-            SR.SendRW(item.link.." -> "..table.concat(n, ", "))
+        if SR.importCount == 0 then SR.DPrint(SR.C_YELLOW.."No SR imported."..SR.C_RESET); return end
+        SR.SendRaid("=== Soft Reserves ===")
+        for itemId, entries in pairs(SR.reserves) do
+            local _, link = GetItemInfo(itemId)
+            local names = {}
+            for _, e in ipairs(entries) do table.insert(names, e.name) end
+            local itemStr = link or ("["..(entries[1].itemName or "?").."]")
+            SR.SendRaid(itemStr.." - "..table.concat(names, ", "))
         end
     end)
 

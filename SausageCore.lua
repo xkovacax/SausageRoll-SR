@@ -138,12 +138,11 @@ function SR.SendRW(msg)
     end
 end
 
-function SR.SendRaid(msg, prefix)
-    prefix = prefix or "[HR]"
+function SR.SendRaid(msg)
     if SR.IsInRaid() then
-        SendChatMessage(prefix.." "..msg, "RAID")
+        SendChatMessage(msg, "RAID")
     elseif GetNumPartyMembers() > 0 then
-        SendChatMessage(prefix.." "..msg, "PARTY")
+        SendChatMessage(msg, "PARTY")
     else
         SR.DPrint(msg)
     end
