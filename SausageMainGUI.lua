@@ -60,15 +60,14 @@ local function CreateRow(parent, rowTable, index, mode)
 
     local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
     tradeBtn:SetSize(BW, BH + gap + 16)
-    tradeBtn:SetPoint("BOTTOM", bankBtn, "BOTTOM", 0, 0)
-    tradeBtn:SetPoint("RIGHT", bankBtn, "LEFT", -gap, 0)
+    tradeBtn:SetPoint("BOTTOMRIGHT", bankBtn, "BOTTOMLEFT", -gap, 0)
     tradeBtn:SetText("Trade")
     tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
     row.tradeBtn = tradeBtn
 
     local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
     winBtn:SetSize(BW, BH)
-    winBtn:SetPoint("RIGHT", tradeBtn, "LEFT", -gap, 0)
+    winBtn:SetPoint("RIGHT", bankBtn, "LEFT", -(BW + 2*gap), 0)
     winBtn:SetText("Winner")
     winBtn:GetFontString():SetFont(winBtn:GetFontString():GetFont(), BF)
     row.winBtn = winBtn
