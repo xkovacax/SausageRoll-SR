@@ -46,7 +46,7 @@ local function CreateRow(parent, rowTable, index, mode)
 
     local bankBtn = CreateFrame("Button", rn.."B", row, "UIPanelButtonTemplate")
     bankBtn:SetSize(BW, BH)
-    bankBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    bankBtn:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 4)
     bankBtn:SetText("Bank")
     bankBtn:GetFontString():SetFont(bankBtn:GetFontString():GetFont(), BF)
     row.bankBtn = bankBtn
@@ -59,18 +59,11 @@ local function CreateRow(parent, rowTable, index, mode)
     row.dissBtn = dissBtn
 
     local tradeBtn = CreateFrame("Button", rn.."T", row, "UIPanelButtonTemplate")
-    tradeBtn:SetSize(BW, BH)
+    tradeBtn:SetSize(BW, BH + gap + 16)
     tradeBtn:SetPoint("BOTTOMRIGHT", bankBtn, "BOTTOMLEFT", -gap, 0)
     tradeBtn:SetText("Trade")
     tradeBtn:GetFontString():SetFont(tradeBtn:GetFontString():GetFont(), BF)
     row.tradeBtn = tradeBtn
-
-    local keepBtn = CreateFrame("Button", rn.."K", row, "UIPanelButtonTemplate")
-    keepBtn:SetSize(BW, 16)
-    keepBtn:SetPoint("BOTTOM", tradeBtn, "TOP", 0, 2)
-    keepBtn:SetText("Keep")
-    keepBtn:GetFontString():SetFont(keepBtn:GetFontString():GetFont(), 8)
-    row.keepBtn = keepBtn
 
     local winBtn = CreateFrame("Button", rn.."W", row, "UIPanelButtonTemplate")
     winBtn:SetSize(BW, BH)
@@ -257,11 +250,6 @@ function SR.SetupRowButtonStates(row, item)
     else
         row.tradeBtn:Disable()
     end
-    if item.state == "HOLD" or item.state == "ROLLED" then
-        row.keepBtn:Enable()
-    else
-        row.keepBtn:Disable()
-    end
 end
 
 function SR.SetupRowCallbacks(row, item, mode)
@@ -342,13 +330,6 @@ function SR.SetupRowCallbacks(row, item, mode)
         if SR.finishedRoll and SR.finishedRoll.uid == item.uid then SR.CloseRollWindow() end
     end)
 
-    -- Keep
-    row.keepBtn:SetScript("OnClick", function()
-        SR.RecordLootHistory(item.itemId, item.link, item.name, item.quality,
-            UnitName("player"), "KEPT")
-        SR.DPrint(SR.C_GREEN.."Kept: "..(item.link or item.name or "?")..SR.C_RESET)
-        SR.RefreshMainFrame()
-    end)
 end
 
 local function SetupRow(row, item, mode)
