@@ -275,6 +275,7 @@ end
 -- Loot history
 ----------------------------------------------------------------------
 function SR.RecordLootHistory(itemId, link, name, quality, recipient, method, uid)
+    if not SR.historyEnabled then return end
     -- Replace previous entry for same UID (prevents duplicates on retry)
     if uid then
         for i = #SR.lootHistory, 1, -1 do

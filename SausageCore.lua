@@ -46,6 +46,7 @@ SR.unclaimedAwards = {}   -- {[itemId] = {{winner, link}, ...}}
 SR.unclaimedRolled = {}   -- {[itemId] = count}
 SR.lootHistory = {}
 SR.showHistory = false
+SR.historyEnabled = true
 SR.historyRows = {}
 
 -- Shared scalars (always read/write via SR.xxx)
