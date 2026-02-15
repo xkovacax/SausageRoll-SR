@@ -42,6 +42,7 @@ SR.srRows = {}
 SR.msRows = {}
 SR.rollRows = {}
 SR.clientRollRows = {}
+SR.uidRolled = {}
 
 -- Shared scalars (always read/write via SR.xxx)
 SR.importCount = 0

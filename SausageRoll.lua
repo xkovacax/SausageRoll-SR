@@ -9,6 +9,7 @@ local SR = SausageRollNS
 function SR.StartRoll(uid, itemId, link, mode)
     SR.countdownTimer = nil
     SR.activeRoll = {uid=uid, itemId=itemId, link=link, mode=mode, rolls={}}
+    SR.uidRolled[uid] = true
     if mode == "sr" then
         local entries = SR.reserves[itemId]
         if entries then

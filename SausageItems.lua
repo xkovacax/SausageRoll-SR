@@ -82,7 +82,15 @@ function SR.EnrichWithUid(item)
     end
     local award = SR.uidAwards[item.uid]
     item.awardWinner = award and award.winner or nil
-    item.state = item.awardWinner and "AWARDED" or "HOLD"
+    if SR.activeRoll and SR.activeRoll.uid == item.uid then
+        item.state = "ROLLING"
+    elseif item.awardWinner then
+        item.state = "AWARDED"
+    elseif SR.uidRolled[item.uid] then
+        item.state = "ROLLED"
+    else
+        item.state = "HOLD"
+    end
 end
 
 function SR.AttachReservers(item)
@@ -95,8 +103,8 @@ end
 function SR.SortBySourceAndQuality(items)
     table.sort(items, function(a, b)
         if a.source ~= b.source then return a.source == "loot" end
-        if a.state ~= b.state then return a.state == "HOLD" end
-        return (a.quality or 0) > (b.quality or 0)
+        if (a.quality or 0) ~= (b.quality or 0) then return (a.quality or 0) > (b.quality or 0) end
+        return (a.uid or 0) < (b.uid or 0)
     end)
 end
 
